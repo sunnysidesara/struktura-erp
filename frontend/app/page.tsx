@@ -1,69 +1,190 @@
 import Image from "next/image";
+import styles from "./page.module.css";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+    <main className={styles["landing-container"]}>
+      {/* ===== TOP BAR: Nav + Auth ===== */}
+      <div className={styles["top-bar"]}>
+        <nav className={styles.navbar}>
+          <a href="#services" className={styles["nav-link"]}>
+            Services
+          </a>
+          <a href="#projects" className={styles["nav-link"]}>
+            Projects
+          </a>
+          <a href="#contact" className={styles["nav-link"]}>
+            Contact
+          </a>
+        </nav>
+
+        <div className={styles["auth-group"]}>
+          <button className={styles["btn-login"]}>Log In</button>
+          <button className={styles["btn-signup"]}>Sign Up</button>
+        </div>
+      </div>
+
+      {/* ===== HERO BANNER (unchanged, full screen feel) ===== */}
+      <div className={styles["banner-wrapper"]}>
         <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
+          src="/assets/struktura-banner.png"
+          alt="Struktura Banner"
+          width={1200}
+          height={400}
           priority
+          className={styles["banner-image"]}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+      </div>
+
+      {/* ===== CTA BUTTONS ===== */}
+      <div className={styles["cta-group"]}>
+        <a href="#services" className={styles["btn-white"]}>
+          What We Can Offer
+        </a>
+        <a href="#projects" className={styles["btn-black"]}>
+          Our Projects
+        </a>
+      </div>
+
+      {/* ===== SECTION 1: SERVICES (White) ===== */}
+      <section
+        id="services"
+        className={`${styles.section} ${styles["section-light"]}`}
+      >
+        <p className={styles["section-label"]}>Our Services</p>
+        <h2 className={styles["section-title"]}>What Our Company Can Offer</h2>
+        <p className={styles["section-subtitle"]}>
+          Purpose-built solutions for construction resource and cost management
+          — engineered for precision, built for scale.
+        </p>
+
+        <div className={styles["services-grid"]}>
+          <div className={styles["service-card"]}>
+            <p className={styles["service-number"]}>01</p>
+            <h3>Automated Cost Deduction</h3>
+            <p>
+              Eliminate manual reconciliation. Intelligent automation processes
+              deductions with full traceability and zero margin for error.
+            </p>
+          </div>
+
+          <div className={styles["service-card"]}>
+            <p className={styles["service-number"]}>02</p>
+            <h3>Skill &amp; Resource Mapping</h3>
+            <p>
+              Align the right people with the right tasks. Precision allocation
+              ensures maximum utilization across every project phase.
+            </p>
+          </div>
+
+          <div className={styles["service-card"]}>
+            <p className={styles["service-number"]}>03</p>
+            <h3>Data Integrity &amp; Access Control</h3>
+            <p>
+              Enterprise-grade security with role-based permissions, audit
+              trails, and encrypted data at every layer.
+            </p>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </section>
+
+      {/* ===== SECTION 2: PARTNERS (White) ===== */}
+      <section
+        id="projects"
+        className={`${styles.section} ${styles["section-light"]}`}
+      >
+        <p className={styles["section-label"]}>Trusted By</p>
+        <h2 className={styles["section-title"]}>Organizations We Work With</h2>
+        <p className={styles["section-subtitle"]}>
+          Partnered with teams and institutions who demand reliability and
+          precision.
+        </p>
+
+        <div className={styles["partners-grid"]}>
+          <div className={styles["partner-card"]}>TechCorp Inc.</div>
+          <div className={styles["partner-card"]}>MetroBank</div>
+          <div className={styles["partner-card"]}>State University</div>
+          <div className={styles["partner-card"]}>HealthPlus</div>
+          <div className={styles["partner-card"]}>ShopSmart</div>
+          <div className={styles["partner-card"]}>SkyLogistics</div>
+          <div className={styles["partner-card"]}>Apex Builders</div>
+          <div className={styles["partner-card"]}>Vertex Engineering</div>
         </div>
-      </main>
-    </div>
+      </section>
+
+      {/* ===== SECTION 3: TEAM (Black) ===== */}
+      <section
+        id="contact"
+        className={`${styles.section} ${styles["section-dark"]}`}
+      >
+        <p className={styles["section-label"]}>The Team</p>
+        <h2 className={styles["section-title"]}>Meet the Developers</h2>
+        <p className={styles["section-subtitle"]}>
+          The minds behind Struktura — building the future of construction
+          resource management.
+        </p>
+
+        <div className={styles["team-grid"]}>
+          <div className={styles["team-card"]}>
+            <div className={styles["team-avatar"]}>
+              <Image
+                src="/assets/jl.jpg"
+                alt="Jenny Lood"
+                width={120}
+                height={120}
+                className={styles["team-photo"]}
+              />
+            </div>
+            <h3>Jenny Lood</h3>
+            <p className={styles.role}>
+              Lead Database Administrator
+              <br />
+              &amp; Cloud Infrastructure Engineer
+            </p>
+          </div>
+
+          <div className={styles["team-card"]}>
+            <div className={styles["team-avatar"]}>
+              <Image
+                src="/assets/angoy.jpg"
+                alt="Christian Angoy"
+                width={120}
+                height={120}
+                className={styles["team-photo"]}
+              />
+            </div>
+            <h3>Christian Angoy</h3>
+            <p className={styles.role}>
+              Lead Database Programmer
+              <br />
+              &amp; Query Optimization Engineer
+            </p>
+          </div>
+
+          <div className={styles["team-card"]}>
+            <div className={styles["team-avatar"]}>
+              <Image
+                src="/assets/sara.jpg"
+                alt="Sara Hinayon"
+                width={120}
+                height={120}
+                className={styles["team-photo"]}
+              />
+            </div>
+            <h3>Sara Hinayon</h3>
+            <p className={styles.role}>
+              Frontend / UI Connector
+              <br />
+              &amp; Git Workflow Administrator
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ===== FOOTER ===== */}
+      <footer className={styles.footer}>
+        © {new Date().getFullYear()} Struktura — All Rights Reserved
+      </footer>
+    </main>
   );
 }

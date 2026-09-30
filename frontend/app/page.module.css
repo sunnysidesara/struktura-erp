@@ -1,0 +1,344 @@
+/* app/page.module.css */
+
+/* ===== HERO (unchanged layout, full screen) ===== */
+.landing-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 100vh;
+  padding: 1.5rem 2rem 3rem;
+  text-align: center;
+  position: relative;
+}
+
+/* ===== Top Bar (nav + auth) ===== */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 1200px;
+  padding: 0.5rem 0 1.5rem;
+}
+
+.navbar {
+  display: flex;
+  gap: 2.5rem;
+  padding-left: 0.5rem;
+}
+
+.nav-link {
+  color: #444444;
+  font-size: 0.9rem;
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: color 0.3s ease;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+}
+
+.nav-link:hover {
+  color: #000000;
+  border-bottom: 1px solid #000000;
+}
+
+/* ===== Auth Buttons ===== */
+.auth-group {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.btn-login,
+.btn-signup {
+  padding: 0.55rem 1.3rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: inherit;
+}
+
+.btn-login {
+  background-color: transparent;
+  color: #010236;
+  border: 1px solid #000000;
+}
+
+.btn-login:hover {
+  background-color: #000000;
+  color: #000000;
+}
+
+.btn-signup {
+  background-color: #000000;
+  color: #ffffff;
+  border: 1px solid #000000;
+}
+
+.btn-signup:hover {
+  background-color: #333333;
+  border-color: #333333;
+}
+
+/* ===== Banner Section ===== */
+.banner-wrapper {
+  width: 100%;
+  max-width: 1000px;
+  margin-bottom: 1.5rem;
+  margin-top: 4rem;
+  display: flex;
+  justify-content: center;
+}
+
+.banner-image {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+/* ===== CTA Buttons ===== */
+.cta-group {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+}
+
+.btn-white,
+.btn-black {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 2rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  font-family: inherit;
+  text-decoration: none;
+}
+
+.btn-white {
+  background-color: #ffffff;
+  color: #000000;
+  border: 1px solid #ffffff;
+}
+
+.btn-white:hover {
+  background-color: transparent;
+  color: #000000;
+  border-color: #000000;
+}
+
+.btn-black {
+  background-color: #000000;
+  color: #ffffff;
+  border: 1px solid #000000;
+}
+
+.btn-black:hover {
+  background-color: #333333;
+  border-color: #333333;
+}
+
+/* ===== Scroll Sections ===== */
+.section {
+  width: 100%;
+  padding: 6rem 2rem;
+  position: relative;
+}
+
+.section-light {
+  background-color: #ffffff;
+  color: #000000;
+  border-top: 1px solid #e5e5e5;
+}
+
+.section-dark {
+  background-color: #000000;
+  color: #ffffff;
+  border-top: 1px solid #222222;
+}
+
+.section-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  text-align: center;
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.section-title {
+  font-size: 2rem;
+  font-weight: 400;
+  text-align: center;
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
+.section-subtitle {
+  font-size: 0.95rem;
+  text-align: center;
+  margin-bottom: 4rem;
+  opacity: 0.6;
+  letter-spacing: 0.05em;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.6;
+}
+
+/* ===== Services Grid ===== */
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1px;
+  max-width: 1100px;
+  margin: 0 auto;
+  background-color: #e5e5e5;
+  border: 1px solid #e5e5e5;
+}
+
+.service-card {
+  padding: 3rem 2rem;
+  background-color: #ffffff;
+  text-align: left;
+  transition: background-color 0.3s ease;
+}
+
+.service-card:hover {
+  background-color: #fafafa;
+}
+
+.service-number {
+  font-size: 0.75rem;
+  letter-spacing: 0.25em;
+  color: #999999;
+  margin-bottom: 1.5rem;
+  font-weight: 400;
+}
+
+.service-card h3 {
+  font-size: 1.05rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  color: #000000;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+}
+
+.service-card p {
+  font-size: 0.9rem;
+  color: #666666;
+  line-height: 1.7;
+  font-weight: 300;
+}
+
+/* ===== Partners Grid ===== */
+.partners-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1px;
+  max-width: 1000px;
+  margin: 0 auto;
+  background-color: #e5e5e5;
+  border: 1px solid #e5e5e5;
+}
+
+.partner-card {
+  padding: 2.5rem 1.5rem;
+  background-color: #ffffff;
+  text-align: center;
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: #333333;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  transition: background-color 0.3s ease;
+}
+
+.partner-card:hover {
+  background-color: #fafafa;
+}
+
+/* ===== Team Grid ===== */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1px;
+  max-width: 1100px;
+  margin: 0 auto;
+  background-color: #222222;
+  border: 1px solid #222222;
+}
+
+.team-card {
+  padding: 3rem 2rem;
+  background-color: #000000;
+  text-align: center;
+  transition: background-color 0.3s ease;
+}
+
+.team-card:hover {
+  background-color: #0a0a0a;
+}
+
+.team-avatar {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background-color: transparent;
+}
+
+.team-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.team-card h3 {
+  font-size: 1rem;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+  color: #ffffff;
+  letter-spacing: 0.05em;
+}
+
+.team-card .role {
+  font-size: 0.8rem;
+  color: #888888;
+  line-height: 1.7;
+  letter-spacing: 0.03em;
+  font-weight: 300;
+}
+
+/* ===== Footer ===== */
+.footer {
+  text-align: center;
+  padding: 2.5rem;
+  background-color: #000000;
+  color: #666666;
+  font-size: 0.75rem;
+  border-top: 1px solid #1a1a1a;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
