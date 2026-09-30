@@ -2,22 +2,23 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
 {
     /**
      * Seed the application's database.
+     *
+     * The RoleSeeder runs first so the dummy Admin account has a role
+     * to reference. Both seeders are temporary scaffolding for local
+     * development; they will be replaced once the real MySQL database
+     * and data are provisioned.
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        $this->call([
+            RoleSeeder::class,
+            AdminUserSeeder::class,
         ]);
     }
 }
