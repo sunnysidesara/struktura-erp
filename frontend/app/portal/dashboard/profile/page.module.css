@@ -1,0 +1,399 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-height: 100%;
+  color: #0f172a;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0.4rem 0 0;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.identityCard,
+.card,
+.kpiCard,
+.dangerCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.identityCard {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.5rem;
+}
+
+.avatar {
+  display: grid;
+  flex: 0 0 80px;
+  width: 80px;
+  height: 80px;
+  place-items: center;
+  border-radius: 50%;
+  background: #ca8a04;
+  color: #ffffff;
+  font-size: 1.45rem;
+  font-weight: 700;
+}
+
+.identityInfo h2 {
+  margin: 0;
+  color: #0a1440;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.identityInfo p {
+  margin: 0.7rem 0 0.25rem;
+  color: #334155;
+  font-size: 0.85rem;
+}
+
+.identityInfo small {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.userId,
+.roleBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.userId {
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-family: monospace;
+}
+
+.roleSA {
+  background: #0a1440;
+  color: #ffffff;
+}
+
+.rolePM {
+  background: #ca8a04;
+  color: #ffffff;
+}
+
+.roleSS {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.kpiCard {
+  display: flex;
+  min-height: 122px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 1.25rem;
+}
+
+.kpiCard > span,
+.detailsGrid dt {
+  color: #6b7280;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.kpiCard strong {
+  color: #0a1440;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.kpiCard small {
+  color: #6b7280;
+  font-size: 0.72rem;
+}
+
+.activeStatus,
+.loginSuccess {
+  color: #1e3a8a;
+  font-weight: 700;
+}
+
+.card {
+  padding: 1.5rem;
+}
+
+.sectionHeading {
+  margin: 0 0 1.2rem;
+  color: #0a1440;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.1rem 2rem;
+  margin: 0;
+}
+
+.detailsGrid > div {
+  min-width: 0;
+}
+
+.detailsGrid dt {
+  margin-bottom: 0.4rem;
+}
+
+.detailsGrid dd {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  color: #334155;
+  font-size: 0.87rem;
+}
+
+.contactInput {
+  width: min(100%, 280px);
+  min-height: 42px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.65rem 0.8rem;
+  color: #0f172a;
+  font: inherit;
+}
+
+.contactInput:focus,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #ca8a04;
+  outline-offset: 2px;
+}
+
+.roleDescription {
+  max-width: 900px;
+  margin: 0 0 1rem;
+  color: #334155;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.permissionList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.permissionList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: #334155;
+  font-size: 0.82rem;
+}
+
+.permissionAllowed svg,
+.permissionDenied svg {
+  flex: 0 0 17px;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.permissionAllowed svg {
+  color: #1e3a8a;
+}
+
+.permissionDenied svg,
+.loginFailed {
+  color: #a16207;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th,
+.table td {
+  padding: 0.85rem 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: #334155;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.table th {
+  background: #f8fafc;
+  color: #6b7280;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.loginFailed {
+  font-weight: 700;
+}
+
+.primaryButton,
+.outlineButton,
+.dangerButton,
+.inlineButton {
+  min-height: 40px;
+  border-radius: 2px;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid #ca8a04;
+  background: #ca8a04;
+  color: #ffffff;
+}
+
+.outlineButton {
+  border: 1px solid #1e3a8a;
+  background: transparent;
+  color: #1e3a8a;
+}
+
+.inlineButton {
+  min-height: 30px;
+  border: 1px solid #ca8a04;
+  background: transparent;
+  color: #a16207;
+}
+
+.dangerCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-color: #1e3a8a;
+  padding: 1.25rem 1.5rem;
+}
+
+.dangerCard .sectionHeading {
+  margin-bottom: 0.35rem;
+}
+
+.dangerCard p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.dangerButton {
+  border: 1px solid #1e3a8a;
+  background: #ffffff;
+  color: #1e3a8a;
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+
+.notice {
+  border: 1px solid #93c5fd;
+  background: #dbeafe;
+  color: #1e3a8a;
+  padding: 0.85rem 1rem;
+  font-size: 0.82rem;
+}
+
+.loading {
+  color: #6b7280;
+}
+
+@media (max-width: 768px) {
+  .pageHeader,
+  .dangerCard {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .identityCard {
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.1rem;
+  }
+
+  .avatar {
+    flex-basis: 64px;
+    width: 64px;
+    height: 64px;
+  }
+
+  .identityInfo h2 {
+    font-size: 1.2rem;
+  }
+
+  .kpiGrid,
+  .detailsGrid,
+  .permissionList {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    padding: 1rem;
+  }
+}
