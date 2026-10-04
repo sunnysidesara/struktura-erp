@@ -1,190 +1,190 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import Link from "next/link";
+
+const partners = [
+  "TechCorp Inc.",
+  "MetroBank",
+  "State University",
+  "HealthPlus",
+  "ShopSmart",
+  "SkyLogistics",
+  "Apex Builders",
+  "Vertex Engineering",
+];
+
+const team = [
+  {
+    name: "Jenny Lood",
+    role: "Lead Database Administrator & Cloud Infrastructure Engineer",
+    image: "/assets/jl.jpg",
+  },
+  {
+    name: "Christian Angoy",
+    role: "Lead Database Programmer & Query Optimization Engineer",
+    image: "/assets/christian.jpg",
+  },
+  {
+    name: "Sara Hinayon",
+    role: "Frontend / UI Connector & Git Workflow Administrator",
+    image: "/assets/sara.png",
+  },
+];
+
+function ArrowIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m5 12 4 4L19 6" />
+    </svg>
+  );
+}
 
 export default function Home() {
   return (
-    <main className={styles["landing-container"]}>
-      {/* ===== TOP BAR: Nav + Auth ===== */}
-      <div className={styles["top-bar"]}>
-        <nav className={styles.navbar}>
-          <a href="#services" className={styles["nav-link"]}>
-            Services
-          </a>
-          <a href="#projects" className={styles["nav-link"]}>
-            Projects
-          </a>
-          <a href="#contact" className={styles["nav-link"]}>
-            Contact
-          </a>
+    <div className="site-shell">
+      <header className="header">
+        <a className="brand" href="#top" aria-label="Struktura home">
+          <span className="brand-mark" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="brand-name">STRUKTURA</span>
+        </a>
+
+        <nav className="nav" aria-label="Main navigation">
+          <a href="#features">Features</a>
+          <a href="#about">About</a>
+          <a href="#organizations">Clients</a>
+          <a href="#contact">Contact</a>
         </nav>
 
-        <div className={styles["auth-group"]}>
-          <button className={styles["btn-login"]}>Log In</button>
-          <button className={styles["btn-signup"]}>Sign Up</button>
-        </div>
-      </div>
+        <Link className="portal-link" href="/portal">
+          Portal <ArrowIcon />
+        </Link>
+      </header>
 
-      {/* ===== HERO BANNER (unchanged, full screen feel) ===== */}
-      <div className={styles["banner-wrapper"]}>
-        <Image
-          src="/assets/struktura-banner.png"
-          alt="Struktura Banner"
-          width={1200}
-          height={400}
-          priority
-          className={styles["banner-image"]}
-        />
-      </div>
+      <main>
+        <section className="hero" id="top">
+          <img
+            className="hero-banner"
+            src="/assets/struktura-banner.png"
+            alt="Struktura — Construction Resource and Cost Management System"
+          />
+          <h1></h1>
+        </section>
 
-      {/* ===== CTA BUTTONS ===== */}
-      <div className={styles["cta-group"]}>
-        <a href="#services" className={styles["btn-white"]}>
-          What We Can Offer
-        </a>
-        <a href="#projects" className={styles["btn-black"]}>
-          Our Projects
-        </a>
-      </div>
-
-      {/* ===== SECTION 1: SERVICES (White) ===== */}
-      <section
-        id="services"
-        className={`${styles.section} ${styles["section-light"]}`}
-      >
-        <p className={styles["section-label"]}>Our Services</p>
-        <h2 className={styles["section-title"]}>What Our Company Can Offer</h2>
-        <p className={styles["section-subtitle"]}>
-          Purpose-built solutions for construction resource and cost management
-          — engineered for precision, built for scale.
-        </p>
-
-        <div className={styles["services-grid"]}>
-          <div className={styles["service-card"]}>
-            <p className={styles["service-number"]}>01</p>
-            <h3>Automated Cost Deduction</h3>
-            <p>
-              Eliminate manual reconciliation. Intelligent automation processes
-              deductions with full traceability and zero margin for error.
-            </p>
+        <section className="features" id="features">
+          <div className="feature-image">
+            <img
+              src="/assets/man-up.png"
+              alt="Construction worker giving a thumbs up"
+            />
           </div>
-
-          <div className={styles["service-card"]}>
-            <p className={styles["service-number"]}>02</p>
-            <h3>Skill &amp; Resource Mapping</h3>
-            <p>
-              Align the right people with the right tasks. Precision allocation
-              ensures maximum utilization across every project phase.
-            </p>
-          </div>
-
-          <div className={styles["service-card"]}>
-            <p className={styles["service-number"]}>03</p>
-            <h3>Data Integrity &amp; Access Control</h3>
-            <p>
-              Enterprise-grade security with role-based permissions, audit
-              trails, and encrypted data at every layer.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* ===== SECTION 2: PARTNERS (White) ===== */}
-      <section
-        id="projects"
-        className={`${styles.section} ${styles["section-light"]}`}
-      >
-        <p className={styles["section-label"]}>Trusted By</p>
-        <h2 className={styles["section-title"]}>Organizations We Work With</h2>
-        <p className={styles["section-subtitle"]}>
-          Partnered with teams and institutions who demand reliability and
-          precision.
-        </p>
-
-        <div className={styles["partners-grid"]}>
-          <div className={styles["partner-card"]}>TechCorp Inc.</div>
-          <div className={styles["partner-card"]}>MetroBank</div>
-          <div className={styles["partner-card"]}>State University</div>
-          <div className={styles["partner-card"]}>HealthPlus</div>
-          <div className={styles["partner-card"]}>ShopSmart</div>
-          <div className={styles["partner-card"]}>SkyLogistics</div>
-          <div className={styles["partner-card"]}>Apex Builders</div>
-          <div className={styles["partner-card"]}>Vertex Engineering</div>
-        </div>
-      </section>
-
-      {/* ===== SECTION 3: TEAM (Black) ===== */}
-      <section
-        id="contact"
-        className={`${styles.section} ${styles["section-dark"]}`}
-      >
-        <p className={styles["section-label"]}>The Team</p>
-        <h2 className={styles["section-title"]}>Meet the Developers</h2>
-        <p className={styles["section-subtitle"]}>
-          The minds behind Struktura — building the future of construction
-          resource management.
-        </p>
-
-        <div className={styles["team-grid"]}>
-          <div className={styles["team-card"]}>
-            <div className={styles["team-avatar"]}>
-              <Image
-                src="/assets/jl.jpg"
-                alt="Jenny Lood"
-                width={120}
-                height={120}
-                className={styles["team-photo"]}
-              />
-            </div>
-            <h3>Jenny Lood</h3>
-            <p className={styles.role}>
-              Lead Database Administrator
+          <div className="feature-copy">
+            <p className="eyebrow">Why Struktura</p>
+            <h2>
+              Built for Real Construction
               <br />
-              &amp; Cloud Infrastructure Engineer
+              Work
+            </h2>
+            <p className="feature-intro">
+              Struktura was designed with construction teams in mind. No
+              complicated setup, no unnecessary screens — just the tools your
+              people need to keep projects moving.
             </p>
+            <ul className="feature-list">
+              <li>
+                <CheckIcon />
+                Built-in cost tracking and deductions
+              </li>
+              <li>
+                <CheckIcon />
+                Skill-based worker assignment
+              </li>
+              <li>
+                <CheckIcon />
+                Secure role-based access for every team
+              </li>
+              <li>
+                <CheckIcon />
+                Live dashboards for project managers
+              </li>
+            </ul>
           </div>
+        </section>
 
-          <div className={styles["team-card"]}>
-            <div className={styles["team-avatar"]}>
-              <Image
-                src="/assets/angoy.jpg"
-                alt="Christian Angoy"
-                width={120}
-                height={120}
-                className={styles["team-photo"]}
-              />
-            </div>
-            <h3>Christian Angoy</h3>
-            <p className={styles.role}>
-              Lead Database Programmer
+        <section className="about section-dark" id="about">
+          <div className="section-index">About us</div>
+          <div className="about-content">
+            <p className="eyebrow light">Who we are</p>
+            <h2>
+              A stronger foundation
               <br />
-              &amp; Query Optimization Engineer
-            </p>
-          </div>
-
-          <div className={styles["team-card"]}>
-            <div className={styles["team-avatar"]}>
-              <Image
-                src="/assets/sara.jpg"
-                alt="Sara Hinayon"
-                width={120}
-                height={120}
-                className={styles["team-photo"]}
-              />
+              for every <strong>project.</strong>
+            </h2>
+            <div className="about-body">
+              <p>
+                Struktura is a construction resource and cost management system
+                built to help companies take control of their projects.
+              </p>
+              <p>
+                We bring workforce planning, cost tracking, and project data
+                together in one platform—so teams can work smarter, reduce
+                errors, and deliver on time.
+              </p>
             </div>
-            <h3>Sara Hinayon</h3>
-            <p className={styles.role}>
-              Frontend / UI Connector
-              <br />
-              &amp; Git Workflow Administrator
+          </div>
+          <div className="about-stat"></div>
+        </section>
+
+        <section className="organizations" id="organizations">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Trusted by</p>
+              <h2>Organizations that build the future</h2>
+            </div>
+            <p>
+              From growing contractors to established enterprises, teams rely on
+              Struktura to keep their operations connected.
             </p>
           </div>
-        </div>
-      </section>
+          <div className="partner-grid">
+            {partners.map((partner, index) => (
+              <div className="partner" key={partner}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                {partner}
+              </div>
+            ))}
+          </div>
+        </section>
 
-      {/* ===== FOOTER ===== */}
-      <footer className={styles.footer}>
-        © {new Date().getFullYear()} Struktura — All Rights Reserved
+        <section className="contact" id="contact">
+          <p className="eyebrow">Start a conversation</p>
+          <h2>
+            Let&apos;s build better,
+            <br />
+            <strong>together.</strong>
+          </h2>
+          <Link className="primary-button dark-button" href="/portal">
+            Get started <ArrowIcon />
+          </Link>
+        </section>
+      </main>
+
+      <footer>
+        <a className="brand footer-brand" href="#top"></a>
+        <p>Construction resource &amp; cost management</p>
+        <small>
+          © {new Date().getFullYear()} Struktura. All rights reserved.
+        </small>
       </footer>
-    </main>
+    </div>
   );
 }
