@@ -165,21 +165,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
+  padding: 0;
   font-weight: 700;
   font-size: 0.68rem;
 }
 .statusOnTrack {
-  background: #dbeafe;
+  background: transparent;
   color: #1e3a8a;
 }
 .statusWarning {
-  background: #fef3c7;
-  color: #92400e;
+  background: transparent;
+  color: #a16207;
 }
 .statusCompleted {
-  background: #dbeafe;
+  background: transparent;
   color: #1d4ed8;
 }
 .twoCol {
@@ -274,6 +273,11 @@
   text-transform: uppercase;
   font-weight: 800;
 }
+
+.statusColumn {
+  text-align: center !important;
+}
+
 .utilizationList {
   display: flex;
   flex-direction: column;
@@ -722,24 +726,23 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
-  padding: 0.35rem 0.75rem;
+  padding: 0;
   font-weight: 700;
   font-size: 0.68rem;
 }
 
 .statusOnTrack {
-  background: #dbeafe;
+  background: transparent;
   color: #1e3a8a;
 }
 
 .statusWarning {
-  background: #fef3c7;
-  color: #92400e;
+  background: transparent;
+  color: #a16207;
 }
 
 .statusCompleted {
-  background: #dbeafe;
+  background: transparent;
   color: #1d4ed8;
 }
 

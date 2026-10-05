@@ -50,12 +50,11 @@ export default function Home() {
     <div className="site-shell">
       <header className="header">
         <a className="brand" href="#top" aria-label="Struktura home">
-          <span className="brand-mark" aria-hidden="true">
+          <span>
             <i />
             <i />
             <i />
           </span>
-          <span className="brand-name">STRUKTURA</span>
         </a>
 
         <nav className="nav" aria-label="Main navigation">

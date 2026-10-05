@@ -304,6 +304,10 @@
   font-weight: 800;
 }
 
+.statusColumn {
+  text-align: center !important;
+}
+
 .statusActive,
 .statusInactive,
 .statusWarning,
@@ -332,12 +336,12 @@
 }
 
 .statusWarning {
-  background: #fef3c7;
-  color: #92400e;
+  background: transparent;
+  color: #a16207;
 }
 
 .statusCompleted {
-  background: #dbeafe;
+  background: transparent;
   color: #1d4ed8;
 }
 

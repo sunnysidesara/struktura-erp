@@ -449,7 +449,7 @@ export default function ProjectManagerDashboard() {
                   <th>Item</th>
                   <th>Type</th>
                   <th>Quantity</th>
-                  <th>Status</th>
+                  <th className={styles.statusColumn}>Status</th>
                   <th>Project</th>
                 </tr>
               </thead>
@@ -460,7 +460,7 @@ export default function ProjectManagerDashboard() {
                       <td>{row.item}</td>
                       <td>{row.type}</td>
                       <td>{row.quantity}</td>
-                      <td>
+                      <td className={styles.statusColumn}>
                         <span
                           className={
                             row.status === "Available"

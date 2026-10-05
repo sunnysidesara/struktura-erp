@@ -286,7 +286,7 @@ export default function SystemAdminDashboard() {
                   <th>User ID</th>
                   <th>Full Name</th>
                   <th>Role</th>
-                  <th>Status</th>
+                  <th className={styles.statusColumn}>Status</th>
                   <th>Last Login</th>
                   <th>Actions</th>
                 </tr>
@@ -297,7 +297,7 @@ export default function SystemAdminDashboard() {
                     <td>{entry.userId}</td>
                     <td>{entry.fullName}</td>
                     <td>{entry.role}</td>
-                    <td>
+                    <td className={styles.statusColumn}>
                       <span
                         className={
                           entry.status === "Active"
@@ -361,7 +361,7 @@ export default function SystemAdminDashboard() {
                   <th>Manager</th>
                   <th>Progress</th>
                   <th>Budget</th>
-                  <th>Status</th>
+                  <th className={styles.statusColumn}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -380,7 +380,7 @@ export default function SystemAdminDashboard() {
                       <small>{project.progress}%</small>
                     </td>
                     <td>{project.budget}</td>
-                    <td>
+                    <td className={styles.statusColumn}>
                       <span
                         className={
                           project.status === "On Track"

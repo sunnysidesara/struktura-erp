@@ -385,7 +385,7 @@ export default function SiteSupervisorDashboard() {
                   <th>Labor Hours</th>
                   <th>Materials Qty</th>
                   <th>Equipment Hours</th>
-                  <th>Status</th>
+                  <th className={styles.statusColumn}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -395,7 +395,7 @@ export default function SiteSupervisorDashboard() {
                     <td>{row.labor}</td>
                     <td>{row.materials}</td>
                     <td>{row.equipment}</td>
-                    <td>{row.status}</td>
+                    <td className={styles.statusColumn}>{row.status}</td>
                   </tr>
                 ))}
               </tbody>

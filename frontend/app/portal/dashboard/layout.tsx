@@ -27,7 +27,7 @@ const roleLabels: Record<UserRole, string> = {
   SS: "Site Supervisor",
 };
 
-type UtilityIcon = "bell" | "chevron" | "menu" | "close" | "moon";
+type UtilityIcon = "bell" | "chevron" | "menu" | "close";
 
 const iconPaths: Record<IconName | UtilityIcon, string> = {
   home: "M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6",
@@ -67,7 +67,6 @@ const iconPaths: Record<IconName | UtilityIcon, string> = {
   chevron: "m7 10 5 5 5-5",
   menu: "M4 6h16M4 12h16M4 18h16",
   close: "m6 6 12 12M18 6 6 18",
-  moon: "M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z",
 };
 
 function Icon({
@@ -99,6 +98,27 @@ const rolePath: Record<UserRole, string> = {
   SS: "/portal/dashboard/ss",
 };
 
+const previewUsers: Record<UserRole, LoggedUser> = {
+  SA: {
+    user_id: "SA101",
+    first_name: "Juan",
+    last_name: "Dela Cruz",
+    role: "SA",
+  },
+  PM: {
+    user_id: "PM101",
+    first_name: "Maria",
+    last_name: "Santos",
+    role: "PM",
+  },
+  SS: {
+    user_id: "SS101",
+    first_name: "Pedro",
+    last_name: "Reyes",
+    role: "SS",
+  },
+};
+
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -107,6 +127,28 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      const previewRole = (Object.keys(rolePath) as UserRole[]).find(
+        (role) =>
+          pathname === rolePath[role] ||
+          pathname.startsWith(`${rolePath[role]}/`),
+      );
+
+      if (previewRole) {
+        const previewUser = previewUsers[previewRole];
+        localStorage.setItem(
+          "struktura_token",
+          `preview-token-${previewUser.user_id}`,
+        );
+        localStorage.setItem(
+          "struktura_user",
+          JSON.stringify(previewUser),
+        );
+        setUser(previewUser);
+        return;
+      }
+    }
+
     const token = localStorage.getItem("struktura_token");
     const storedUser = localStorage.getItem("struktura_user");
 
@@ -323,18 +365,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </section>
           ))}
         </nav>
-        <div className={styles.sidebarBottom}>
-          <div className={styles.utilityRow}>
-            <button type="button" aria-label="Toggle theme">
-              <Icon name="moon" />
-            </button>
-            <button type="button" aria-label="Settings">
-              <Icon name="settings" />
-            </button>
-          </div>
-          <span className={styles.updatedLabel}>Updated</span>
-          <span className={styles.updatedDate}>October 4, 2026</span>
-        </div>
       </aside>
       {drawerOpen ? (
         <button
