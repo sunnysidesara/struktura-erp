@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   SaPanel,
   SaTable,
@@ -27,7 +27,7 @@ import { DetailModal } from "../_components/DetailModal";
 import styles from "../../sa/page.module.css";
 import pmStyles from "../page.module.css";
 
-type UsageRow = { id: number; name: string; amount: string; date: string; phase: string };
+type UsageRow = { id: number; name: string; amount: string; date: string; phase: string; phaseId: number };
 type Notice = { type: "success" | "error"; message: string } | null;
 
 /** Materials / Equipment detail popup: usage table + "log new usage" form. */
@@ -52,6 +52,7 @@ export function UsageDetail({
   const [notice, setNotice] = useState<Notice>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [detail, setDetail] = useState<{ title: string; rows: DetailRow[] } | null>(null);
+  const [phaseFilter, setPhaseFilter] = useState("all");
 
   const [itemId, setItemId] = useState("");
   const [phaseId, setPhaseId] = useState("");
@@ -71,6 +72,7 @@ export function UsageDetail({
             amount: `${item.quantity} ${item.unit ?? ""}`.trim(),
             date: item.date,
             phase: item.phase,
+            phaseId: item.phase_id,
           })),
         )
       : listPmEquipmentUsage(project.project_id).then((items) =>
@@ -80,6 +82,7 @@ export function UsageDetail({
             amount: `${item.hours} h`,
             date: item.date,
             phase: item.phase,
+            phaseId: item.phase_id,
           })),
         );
 
@@ -190,10 +193,19 @@ export function UsageDetail({
     }
   }
 
+  const visibleRows = useMemo(
+    () =>
+      phaseFilter === "all"
+        ? rows
+        : rows.filter((row) => String(row.phaseId) === phaseFilter),
+    [rows, phaseFilter],
+  );
+
   const columns: SaColumn<UsageRow>[] = [
     { key: "name", label: isMaterial ? "Material" : "Equipment", render: (row) => row.name },
     { key: "amount", label: isMaterial ? "Quantity" : "Hours", render: (row) => row.amount },
     { key: "date", label: "Date", render: (row) => row.date },
+    { key: "phase", label: "Phase", render: (row) => row.phase },
     {
       key: "actions",
       label: "Actions",
@@ -236,19 +248,38 @@ export function UsageDetail({
       ) : null}
 
       <SaPanel
-        title={`${pageName} used (${rows.length})`}
+        title={`${pageName} used (${visibleRows.length})`}
         filters={
-          <button type="button" className={styles.primaryButton} onClick={openForm}>
-            + Log {isMaterial ? "Material" : "Equipment"}
-          </button>
+          <>
+            <span className={pmStyles.filterLabel}>Filter by Phase</span>
+            <select
+              value={phaseFilter}
+              onChange={(event) => setPhaseFilter(event.target.value)}
+              aria-label={`Filter ${pageName.toLowerCase()} by phase`}
+            >
+              <option value="all">All Phases</option>
+              {phases.map((phase) => (
+                <option key={phase.phase_id} value={phase.phase_id}>
+                  {phase.sequence_no}. {phase.phase_name}
+                </option>
+              ))}
+            </select>
+            <button type="button" className={styles.primaryButton} onClick={openForm}>
+              + Log {isMaterial ? "Material" : "Equipment"}
+            </button>
+          </>
         }
       >
         <SaTable
           columns={columns}
-          rows={rows}
+          rows={visibleRows}
           loading={loading}
           error={error}
-          emptyText={`No ${kind} usage logged for this project yet.`}
+          emptyText={
+            phaseFilter === "all"
+              ? `No ${kind} usage logged for this project yet.`
+              : `No ${kind} usage logged for this phase yet.`
+          }
           rowKey={(row) => row.id}
         />
       </SaPanel>

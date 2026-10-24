@@ -12,29 +12,20 @@ import {
   useApiData,
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
-import { BarChart } from "@/app/portal/dashboard/pm/_components/PmReport";
 
-type TabId = "projects" | "deadlines" | "costs";
+type TabId = "projects" | "deadlines";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "projects", label: "My Projects" },
   { id: "deadlines", label: "Upcoming Deadlines" },
-  { id: "costs", label: "Cost Breakdown" },
 ];
 
 export default function ProjectManagerDashboard() {
   const { data, loading, error } = useApiData(getPmDashboard);
   const [tab, setTab] = useState<TabId>("projects");
 
-  const costs = data?.costs;
   const projects = data?.projects ?? [];
   const deadlines = data?.deadlines ?? [];
-
-  const costChart = [
-    { label: "Labor", value: costs?.labor ?? 0 },
-    { label: "Materials", value: costs?.materials ?? 0 },
-    { label: "Equipment", value: costs?.equipment ?? 0 },
-  ];
 
   // Portfolio summary only — 4 columns, everything else lives in the project page.
   const projectColumns: SaColumn<PmProject>[] = [
@@ -93,12 +84,6 @@ export default function ProjectManagerDashboard() {
             emptyText="No upcoming deadlines."
             rowKey={(row) => row.project_id}
           />
-        </SaPanel>
-      ) : null}
-
-      {tab === "costs" ? (
-        <SaPanel title="Cost Breakdown">
-          <BarChart data={costChart} />
         </SaPanel>
       ) : null}
     </SaPage>

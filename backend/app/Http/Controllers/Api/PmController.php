@@ -1150,6 +1150,7 @@ class PmController extends Controller
             ->whereIn('ph.project_id', $ids)
             ->select(
                 'wa.assignment_id',
+                'ph.phase_id',
                 'l.first_name',
                 'l.last_name',
                 'p.project_name as project',

@@ -11,9 +11,9 @@ export default function AssignmentsPage() {
   return (
     <>
       <ProjectMaster
-        kicker="Workforce"
+        kicker="Operations"
         title="Assignments"
-        subtitle="Choose a project to review and assign its workers"
+        subtitle="Choose a project to review its worker assignments by phase"
         actionLabel="View Assignments"
         onOpen={setOpenProject}
       />

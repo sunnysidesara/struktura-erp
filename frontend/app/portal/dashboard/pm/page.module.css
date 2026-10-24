@@ -1000,6 +1000,16 @@
   background: #e2e8f0;
 }
 
+/* ---- labelled filter control (phase dropdowns) ---- */
+.filterLabel {
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 @media (max-width: 640px) {
   .summaryDivider {
     display: none;
