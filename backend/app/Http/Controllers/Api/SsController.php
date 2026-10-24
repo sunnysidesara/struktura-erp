@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SsController extends Controller
 {
@@ -84,13 +85,14 @@ class SsController extends Controller
     /**
      * One labor entry per worker, per phase, per day.
      */
-    private function laborLogExists(int $laborerId, int $phaseId, string $date, ?int $exceptLogId = null): bool
+    private function laborLogExists(int $laborerId, int $phaseId, string $date, ?int $exceptLogId = null, ?string $shift = null): bool
     {
         return DB::table('labor_hour_log as lhl')
             ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'lhl.assignment_id')
             ->where('wa.laborer_id', $laborerId)
             ->where('wa.phase_id', $phaseId)
             ->whereDate('lhl.log_date', $date)
+            ->when($shift !== null, fn ($query) => $query->where('lhl.shift', $shift))
             ->when($exceptLogId !== null, fn ($query) => $query->where('lhl.log_id', '!=', $exceptLogId))
             ->exists();
     }
@@ -616,6 +618,9 @@ class SsController extends Controller
                 'lhl.log_id',
                 'lhl.assignment_id',
                 'lhl.log_date',
+                'lhl.shift',
+                'lhl.time_in',
+                'lhl.time_out',
                 'lhl.regular_hours',
                 'lhl.overtime_hours',
                 'l.first_name',
@@ -631,6 +636,9 @@ class SsController extends Controller
                 'log_id' => (int) $row->log_id,
                 'assignment_id' => (int) $row->assignment_id,
                 'date' => $row->log_date,
+                'shift' => $row->shift ?? 'Morning',
+                'time_in' => $row->time_in ? substr((string) $row->time_in, 0, 5) : null,
+                'time_out' => $row->time_out ? substr((string) $row->time_out, 0, 5) : null,
                 'worker' => trim($row->first_name.' '.$row->last_name),
                 'regular' => (float) $row->regular_hours,
                 'overtime' => (float) $row->overtime_hours,
@@ -666,6 +674,7 @@ class SsController extends Controller
                 'mu.material_id',
                 'mu.usage_date',
                 'mu.quantity_used',
+                'mu.computed_cost',
                 'm.material_name',
                 'm.unit_of_measure',
                 'ph.phase_id',
@@ -682,6 +691,7 @@ class SsController extends Controller
                 'material' => $row->material_name,
                 'quantity' => (float) $row->quantity_used,
                 'unit' => $row->unit_of_measure,
+                'expense' => round((float) ($row->computed_cost ?? 0), 2),
                 'phase_id' => (int) $row->phase_id,
                 'phase' => $row->phase_name,
                 'project_id' => (int) $row->project_id,
@@ -713,6 +723,7 @@ class SsController extends Controller
                 'eu.equipment_id',
                 'eu.usage_date',
                 'eu.hours_used',
+                'eu.computed_cost',
                 'e.equipment_name',
                 'ph.phase_id',
                 'ph.project_name as phase_name',
@@ -727,6 +738,7 @@ class SsController extends Controller
                 'date' => $row->usage_date,
                 'equipment' => $row->equipment_name,
                 'hours' => (float) $row->hours_used,
+                'expense' => round((float) ($row->computed_cost ?? 0), 2),
                 'phase_id' => (int) $row->phase_id,
                 'phase' => $row->phase_name,
                 'project_id' => (int) $row->project_id,
@@ -1176,6 +1188,26 @@ class SsController extends Controller
         ]);
     }
     /**
+     * Hours between two "HH:MM" strings, or null when either is missing.
+     */
+    private function hoursFromTimes(?string $timeIn, ?string $timeOut): ?float
+    {
+        if ($timeIn === null || $timeOut === null || $timeIn === '' || $timeOut === '') {
+            return null;
+        }
+
+        $minutes = Carbon::createFromFormat('H:i', $timeIn)->diffInMinutes(Carbon::createFromFormat('H:i', $timeOut), false);
+
+        if ($minutes <= 0) {
+            throw ValidationException::withMessages([
+                'time_out' => ['Time out must be later than time in.'],
+            ]);
+        }
+
+        return round($minutes / 60, 2);
+    }
+
+    /**
      * Supervisor asks the Project Manager to sign a phase off.
      */
     public function requestCompletion(Request $request, int $id): JsonResponse
@@ -1309,9 +1341,16 @@ class SsController extends Controller
         $data = $request->validate([
             'assignment_id' => ['required', 'integer'],
             'log_date' => ['required', 'date', 'before_or_equal:today'],
-            'regular_hours' => ['required', 'numeric', 'min:0', 'max:24'],
+            'shift' => ['nullable', 'in:Morning,Afternoon'],
+            'time_in' => ['nullable', 'date_format:H:i'],
+            'time_out' => ['nullable', 'date_format:H:i'],
+            'regular_hours' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'overtime_hours' => ['nullable', 'numeric', 'min:0', 'max:12'],
         ]);
+
+        $shift = $data['shift'] ?? 'Morning';
+        $timeIn = $data['time_in'] ?? null;
+        $timeOut = $data['time_out'] ?? null;
 
         $ids = $this->projectIds($request);
         $assignment = $this->assignmentFor($ids, (int) $data['assignment_id']);
@@ -1326,11 +1365,11 @@ class SsController extends Controller
             ], 422);
         }
 
-        $regular = round((float) $data['regular_hours'], 2);
+        $regular = $this->hoursFromTimes($timeIn, $timeOut) ?? round((float) ($data['regular_hours'] ?? 0), 2);
         $overtime = round((float) ($data['overtime_hours'] ?? 0), 2);
 
         if ($regular + $overtime <= 0) {
-            return response()->json(['message' => 'Enter at least one hour.'], 422);
+            return response()->json(['message' => 'Enter the shift times or at least one hour.'], 422);
         }
 
         if ($regular + $overtime > 24) {
@@ -1339,7 +1378,7 @@ class SsController extends Controller
             ], 422);
         }
 
-        if ($this->laborLogExists((int) $assignment->laborer_id, (int) $assignment->phase_id, (string) $data['log_date'])) {
+        if ($this->laborLogExists((int) $assignment->laborer_id, (int) $assignment->phase_id, (string) $data['log_date'], null, $shift)) {
             return response()->json([
                 'message' => 'This laborer already has hours logged for this phase on '.$data['log_date'].'. Edit that entry instead.',
             ], 422);
@@ -1351,10 +1390,13 @@ class SsController extends Controller
 
         $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
 
-        $logId = DB::transaction(function () use ($data, $regular, $overtime, $cost, $assignment, $request) {
+        $logId = DB::transaction(function () use ($data, $shift, $timeIn, $timeOut, $regular, $overtime, $cost, $assignment, $request) {
             $log = LaborHourLog::create([
                 'assignment_id' => $assignment->assignment_id,
                 'log_date' => $data['log_date'],
+                'shift' => $shift,
+                'time_in' => $timeIn,
+                'time_out' => $timeOut,
                 'regular_hours' => $regular,
                 'overtime_hours' => $overtime,
                 'computed_cost' => $cost,
@@ -1388,7 +1430,10 @@ class SsController extends Controller
         $data = $request->validate([
             'assignment_id' => ['nullable', 'integer'],
             'log_date' => ['required', 'date', 'before_or_equal:today'],
-            'regular_hours' => ['required', 'numeric', 'min:0', 'max:24'],
+            'shift' => ['nullable', 'in:Morning,Afternoon'],
+            'time_in' => ['nullable', 'date_format:H:i'],
+            'time_out' => ['nullable', 'date_format:H:i'],
+            'regular_hours' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'overtime_hours' => ['nullable', 'numeric', 'min:0', 'max:12'],
         ]);
 
@@ -1397,6 +1442,10 @@ class SsController extends Controller
         if (! $log) {
             return response()->json(['message' => 'Labor log not found.'], 404);
         }
+
+        $shift = $data['shift'] ?? $log->shift ?? 'Morning';
+        $timeIn = $data['time_in'] ?? ($log->time_in ? substr((string) $log->time_in, 0, 5) : null);
+        $timeOut = $data['time_out'] ?? ($log->time_out ? substr((string) $log->time_out, 0, 5) : null);
 
         $ids = $this->projectIds($request);
         $original = $this->assignmentFor($ids, (int) $log->assignment_id);
@@ -1420,7 +1469,10 @@ class SsController extends Controller
             ], 422);
         }
 
-        $regular = round((float) $data['regular_hours'], 2);
+        $regular = $this->hoursFromTimes($timeIn, $timeOut)
+            ?? (isset($data['regular_hours'])
+                ? round((float) $data['regular_hours'], 2)
+                : round((float) $log->regular_hours, 2));
         $overtime = round((float) ($data['overtime_hours'] ?? 0), 2);
 
         if ($regular + $overtime <= 0) {
@@ -1437,7 +1489,8 @@ class SsController extends Controller
             (int) $assignment->laborer_id,
             (int) $assignment->phase_id,
             (string) $data['log_date'],
-            (int) $log->log_id
+            (int) $log->log_id,
+            $shift
         )) {
             return response()->json([
                 'message' => 'Another entry already exists for this laborer on this phase for that date.',
@@ -1450,13 +1503,16 @@ class SsController extends Controller
 
         $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
 
-        DB::transaction(function () use ($log, $assignment, $original, $data, $regular, $overtime, $cost) {
+        DB::transaction(function () use ($log, $assignment, $original, $data, $shift, $timeIn, $timeOut, $regular, $overtime, $cost) {
             // Refund the old charge, then charge the corrected one.
             $this->adjustProjectBudget((int) $original->project_id, (float) $log->computed_cost);
 
             $log->update([
                 'assignment_id' => $assignment->assignment_id,
                 'log_date' => $data['log_date'],
+                'shift' => $shift,
+                'time_in' => $timeIn,
+                'time_out' => $timeOut,
                 'regular_hours' => $regular,
                 'overtime_hours' => $overtime,
                 'computed_cost' => $cost,

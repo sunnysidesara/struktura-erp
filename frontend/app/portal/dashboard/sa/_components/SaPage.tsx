@@ -68,17 +68,34 @@ export function Tabs<T extends string>({
   );
 }
 
-export type SaColumn<T> = { key: string; label: string; status?: boolean; render: (row: T) => ReactNode };
+export type SaColumn<T> = { key: string; label: string; status?: boolean; sortable?: boolean; render: (row: T) => ReactNode };
 
-export function SaTable<T>({ columns, rows, loading, error, emptyText, rowKey }: { columns: SaColumn<T>[]; rows: T[]; loading?: boolean; error?: string; emptyText?: string; rowKey?: (row: T) => string | number }) {
+/** Sort state for tables that opt into sortable headers. */
+export type SaSortState = { key: string; direction: "asc" | "desc" } | null;
+
+function nextSort(current: SaSortState | undefined, key: string): SaSortState {
+  if (current?.key !== key) return { key, direction: "asc" };
+  return { key, direction: current.direction === "asc" ? "desc" : "asc" };
+}
+
+export function SaTable<T>({ columns, rows, loading, error, emptyText, rowKey, sort, onSortChange }: { columns: SaColumn<T>[]; rows: T[]; loading?: boolean; error?: string; emptyText?: string; rowKey?: (row: T) => string | number; sort?: SaSortState; onSortChange?: (next: SaSortState) => void }) {
   return (
     <div className={styles.tableWrap}>
       <table className={styles.table}>
         <thead>
           <tr>
-            {columns.map((column) => (
-              <th key={column.key} className={column.status ? styles.statusColumn : undefined}>{column.label}</th>
-            ))}
+            {columns.map((column) =>
+              column.sortable && onSortChange ? (
+                <th key={column.key} className={column.status ? styles.statusColumn : undefined} aria-sort={sort?.key === column.key ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <button type="button" className={styles.sortButton} onClick={() => onSortChange(nextSort(sort, column.key))}>
+                    {column.label}
+                    <span aria-hidden="true">{sort?.key === column.key ? (sort.direction === "asc" ? "\u25B2" : "\u25BC") : "\u2195"}</span>
+                  </button>
+                </th>
+              ) : (
+                <th key={column.key} className={column.status ? styles.statusColumn : undefined}>{column.label}</th>
+              ),
+            )}
           </tr>
         </thead>
         <tbody>

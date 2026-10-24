@@ -37,9 +37,14 @@ class UpdateProfileRequest extends FormRequest
 
         if ($this->has('contact_number')) {
             $contact = $this->input('contact_number');
-            $normalized['contact_number'] = is_string($contact) && trim($contact) !== ''
-                ? trim($contact)
-                : null;
+
+            if (is_string($contact)) {
+                // Store digits only: users often paste "+63 917-123-4567".
+                $digits = preg_replace('/[\s\-().]+/', '', trim($contact));
+                $normalized['contact_number'] = $digits === '' ? null : $digits;
+            } elseif ($contact === null) {
+                $normalized['contact_number'] = null;
+            }
         }
 
         $this->merge($normalized);
@@ -59,7 +64,7 @@ class UpdateProfileRequest extends FormRequest
                 'required', 'string', 'email:rfc', 'max:255',
                 Rule::unique('users', 'email')->ignore($userId, 'user_id'),
             ],
-            'contact_number' => ['nullable', 'string', 'max:30', 'regex:/^[0-9+()\s.-]*$/'],
+            'contact_number' => ['nullable', 'string', 'max:16', 'regex:/^\+?[0-9]{7,15}$/'],
         ];
     }
 
@@ -72,7 +77,7 @@ class UpdateProfileRequest extends FormRequest
             'first_name.regex' => 'The first name may only contain letters, spaces, hyphens, apostrophes, and periods.',
             'last_name.regex' => 'The last name may only contain letters, spaces, hyphens, apostrophes, and periods.',
             'email.unique' => 'An account with this email already exists.',
-            'contact_number.regex' => 'The contact number may only contain digits, spaces, and + ( ) - . characters.',
+            'contact_number.regex' => 'The contact number must be numeric: 7 to 15 digits, with an optional leading +.',
         ];
     }
 }

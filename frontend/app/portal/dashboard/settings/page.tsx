@@ -68,6 +68,11 @@ const DEFAULT_NOTIFICATIONS: Record<NotificationKey, boolean> = {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/** Numeric contact: optional leading +, then 7-15 digits. */
+const CONTACT_PATTERN = /^\+?\d{7,15}$/;
+
+type ProfileErrors = Partial<Record<keyof ProfileValues, string>>;
+type PasswordErrors = { current?: string; next?: string; confirm?: string };
 
 /** Read the saved toggles once, lazily, so no effect is needed. */
 function readStoredNotifications(): Record<NotificationKey, boolean> {
@@ -159,6 +164,7 @@ export default function SettingsPage() {
 
   const [profile, setProfile] = useState<ProfileValues>(EMPTY_PROFILE);
   const [profileStatus, setProfileStatus] = useState<Status>(null);
+  const [profileErrors, setProfileErrors] = useState<ProfileErrors>({});
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [passwords, setPasswords] = useState({
@@ -167,6 +173,7 @@ export default function SettingsPage() {
     confirm: "",
   });
   const [passwordStatus, setPasswordStatus] = useState<Status>(null);
+  const [passwordErrors, setPasswordErrors] = useState<PasswordErrors>({});
   const [savingPassword, setSavingPassword] = useState(false);
 
   const [notifications, setNotifications] = useState<
@@ -218,6 +225,7 @@ export default function SettingsPage() {
 
   const updateProfileField = (key: keyof ProfileValues, value: string) => {
     setProfile((current) => ({ ...current, [key]: value }));
+    setProfileErrors((current) => ({ ...current, [key]: undefined }));
     setProfileStatus(null);
   };
 
@@ -228,21 +236,34 @@ export default function SettingsPage() {
     const firstName = profile.firstName.trim();
     const lastName = profile.lastName.trim();
     const email = profile.email.trim();
-    const contact = profile.contact.trim();
+    const contactRaw = profile.contact.trim();
+    // Normalize before validating so pasted "+63 917-123-4567" still works.
+    const contact = contactRaw.replace(/[\s\-().]+/g, "");
 
-    if (!firstName || !lastName) {
-      setProfileStatus({
-        type: "error",
-        message: "First name and last name are required.",
-      });
+    const errors: ProfileErrors = {};
+
+    if (!firstName) {
+      errors.firstName = "First name is required.";
+    }
+    if (!lastName) {
+      errors.lastName = "Last name is required.";
+    }
+    if (!email) {
+      errors.email = "Email is required.";
+    } else if (!EMAIL_PATTERN.test(email)) {
+      errors.email = "Enter a valid email address (e.g. name@company.com).";
+    }
+    if (contact !== "" && !CONTACT_PATTERN.test(contact)) {
+      errors.contact = "Contact number must be numeric (7-15 digits, optional leading +).";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setProfileErrors(errors);
+      setProfileStatus({ type: "error", message: "Please fix the highlighted fields." });
       return;
     }
 
-    if (!EMAIL_PATTERN.test(email)) {
-      setProfileStatus({ type: "error", message: "Enter a valid email address." });
-      return;
-    }
-
+    setProfileErrors({});
     setSavingProfile(true);
 
     try {
@@ -264,6 +285,26 @@ export default function SettingsPage() {
       persistSessionName(user.first_name, user.last_name, user.email);
       setProfileStatus({ type: "success", message: "Changes saved successfully." });
     } catch (error) {
+      // Map server-side validation errors back onto their inputs.
+      if (error instanceof ApiError && error.errors) {
+        const mapped: ProfileErrors = {};
+        const pick = (key: string) => error.errors?.[key]?.[0];
+
+        const firstError = pick("first_name");
+        const lastError = pick("last_name");
+        const emailError = pick("email");
+        const contactError = pick("contact_number");
+
+        if (firstError) mapped.firstName = firstError;
+        if (lastError) mapped.lastName = lastError;
+        if (emailError) mapped.email = emailError;
+        if (contactError) mapped.contact = contactError;
+
+        if (Object.keys(mapped).length > 0) {
+          setProfileErrors(mapped);
+        }
+      }
+
       setProfileStatus({ type: "error", message: messageFrom(error) });
     } finally {
       setSavingProfile(false);
@@ -275,6 +316,7 @@ export default function SettingsPage() {
     value: string,
   ) => {
     setPasswords((current) => ({ ...current, [key]: value }));
+    setPasswordErrors((current) => ({ ...current, [key]: undefined }));
     setPasswordStatus(null);
   };
 
@@ -282,38 +324,27 @@ export default function SettingsPage() {
     event.preventDefault();
     setPasswordStatus(null);
 
+    const errors: PasswordErrors = {};
+
     if (!passwords.current) {
-      setPasswordStatus({
-        type: "error",
-        message: "Enter your current password.",
-      });
-      return;
+      errors.current = "Enter your current password.";
     }
-
     if (passwords.next.length < 8) {
-      setPasswordStatus({
-        type: "error",
-        message: "New password must be at least 8 characters.",
-      });
+      errors.next = "New password must be at least 8 characters.";
+    } else if (passwords.next === passwords.current) {
+      errors.next = "New password must be different from the current password.";
+    }
+    if (passwords.confirm !== passwords.next) {
+      errors.confirm = "Passwords do not match.";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setPasswordErrors(errors);
+      setPasswordStatus({ type: "error", message: "Please fix the highlighted fields." });
       return;
     }
 
-    if (passwords.next !== passwords.confirm) {
-      setPasswordStatus({
-        type: "error",
-        message: "New passwords do not match.",
-      });
-      return;
-    }
-
-    if (passwords.next === passwords.current) {
-      setPasswordStatus({
-        type: "error",
-        message: "New password must be different from the current password.",
-      });
-      return;
-    }
-
+    setPasswordErrors({});
     setSavingPassword(true);
 
     try {
@@ -329,6 +360,19 @@ export default function SettingsPage() {
         message: "Password changed successfully.",
       });
     } catch (error) {
+      if (error instanceof ApiError && error.errors) {
+        const mapped: PasswordErrors = {};
+        const currentError = error.errors.current_password?.[0];
+        const nextError = error.errors.password?.[0];
+
+        if (currentError) mapped.current = currentError;
+        if (nextError) mapped.next = nextError;
+
+        if (Object.keys(mapped).length > 0) {
+          setPasswordErrors(mapped);
+        }
+      }
+
       setPasswordStatus({ type: "error", message: messageFrom(error) });
     } finally {
       setSavingPassword(false);
@@ -336,8 +380,16 @@ export default function SettingsPage() {
   };
 
   const toggleNotification = (key: NotificationKey) => {
-    setNotifications((current) => ({ ...current, [key]: !current[key] }));
-    setNotificationStatus(null);
+    setNotifications((current) => {
+      const next = { ...current, [key]: !current[key] };
+      // Persist immediately so the toggle survives a refresh.
+      window.localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(next));
+      return next;
+    });
+    setNotificationStatus({
+      type: "success",
+      message: "Notification preferences saved.",
+    });
   };
 
   const saveNotifications = (event: FormEvent<HTMLFormElement>) => {
@@ -420,6 +472,9 @@ export default function SettingsPage() {
                       }
                       autoComplete="given-name"
                     />
+                    {profileErrors.firstName ? (
+                      <p className={styles.fieldError}>{profileErrors.firstName}</p>
+                    ) : null}
                   </label>
 
                   <label className={styles.field}>
@@ -431,6 +486,9 @@ export default function SettingsPage() {
                       }
                       autoComplete="family-name"
                     />
+                    {profileErrors.lastName ? (
+                      <p className={styles.fieldError}>{profileErrors.lastName}</p>
+                    ) : null}
                   </label>
 
                   <label className={styles.field}>
@@ -443,6 +501,9 @@ export default function SettingsPage() {
                       }
                       autoComplete="email"
                     />
+                    {profileErrors.email ? (
+                      <p className={styles.fieldError}>{profileErrors.email}</p>
+                    ) : null}
                   </label>
 
                   <label className={styles.field}>
@@ -456,6 +517,9 @@ export default function SettingsPage() {
                       placeholder="+63 917 123 4567"
                       autoComplete="tel"
                     />
+                    {profileErrors.contact ? (
+                      <p className={styles.fieldError}>{profileErrors.contact}</p>
+                    ) : null}
                   </label>
 
                   <label className={styles.field}>
@@ -513,6 +577,9 @@ export default function SettingsPage() {
                       }
                       autoComplete="current-password"
                     />
+                    {passwordErrors.current ? (
+                      <p className={styles.fieldError}>{passwordErrors.current}</p>
+                    ) : null}
                   </label>
 
                   <div className={styles.formGrid}>
@@ -526,6 +593,9 @@ export default function SettingsPage() {
                         }
                         autoComplete="new-password"
                       />
+                    {passwordErrors.next ? (
+                      <p className={styles.fieldError}>{passwordErrors.next}</p>
+                    ) : null}
                     </label>
 
                     <label className={styles.field}>
@@ -538,6 +608,9 @@ export default function SettingsPage() {
                         }
                         autoComplete="new-password"
                       />
+                    {passwordErrors.confirm ? (
+                      <p className={styles.fieldError}>{passwordErrors.confirm}</p>
+                    ) : null}
                     </label>
                   </div>
 

@@ -18,6 +18,9 @@ class LaborHourLog extends Model
     protected $fillable = [
         'assignment_id',
         'log_date',
+        'shift',
+        'time_in',
+        'time_out',
         'regular_hours',
         'overtime_hours',
         'computed_cost',

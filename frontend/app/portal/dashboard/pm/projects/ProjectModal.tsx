@@ -19,8 +19,9 @@ type Values = {
   supervisorId: string;
   start: string;
   end: string;
-  deadline: string;
   budget: string;
+  materials: string;
+  equipment: string;
   status: string;
 };
 
@@ -31,8 +32,9 @@ const EMPTY: Values = {
   supervisorId: "",
   start: "",
   end: "",
-  deadline: "",
   budget: "",
+  materials: "",
+  equipment: "",
   status: "On Track",
 };
 
@@ -78,8 +80,9 @@ export function ProjectModal({
               : "",
             start: dateOnly(project.start_date),
             end: dateOnly(project.end_date),
-            deadline: dateOnly(project.deadline),
             budget: String(project.approved_budget ?? ""),
+            materials: String(project.materials_budget ?? ""),
+            equipment: String(project.equipment_budget ?? ""),
             status: project.status ?? "On Track",
           }
         : EMPTY,
@@ -121,9 +124,26 @@ export function ProjectModal({
     }
 
     const budget = values.budget.trim() === "" ? 0 : Number(values.budget);
+    const materials = values.materials.trim() === "" ? 0 : Number(values.materials);
+    const equipment = values.equipment.trim() === "" ? 0 : Number(values.equipment);
 
     if (!Number.isFinite(budget) || budget < 0) {
-      setFormError("Approved budget must be a positive amount.");
+      setFormError("Total budget must be a positive amount.");
+      return;
+    }
+
+    if (
+      !Number.isFinite(materials) ||
+      materials < 0 ||
+      !Number.isFinite(equipment) ||
+      equipment < 0
+    ) {
+      setFormError("Budget allocations must be positive amounts.");
+      return;
+    }
+
+    if (Math.round((materials + equipment) * 100) > Math.round(budget * 100)) {
+      setFormError("Materials and equipment allocations cannot exceed the total budget.");
       return;
     }
 
@@ -133,11 +153,12 @@ export function ProjectModal({
       location: values.location.trim() || null,
       start_date: values.start || null,
       end_date: values.end || null,
-      deadline: values.deadline || null,
       status: values.status,
       site_supervisor_id: Number(values.supervisorId),
-      // Budget is only submitted when creating; existing spend must not desync.
-      ...(project ? {} : { approved_budget: budget }),
+      // All three budget figures are PM-owned and editable at any time.
+      approved_budget: budget,
+      materials_budget: materials,
+      equipment_budget: equipment,
     };
 
     setSaving(true);
@@ -162,10 +183,8 @@ export function ProjectModal({
           setSupervisorError(first("site_supervisor_id") as string);
           return;
         }
-        if (first("end_date") || first("start_date") || first("deadline")) {
-          setDateError(
-            first("end_date") ?? first("start_date") ?? (first("deadline") as string),
-          );
+        if (first("end_date") || first("start_date")) {
+          setDateError(first("end_date") ?? (first("start_date") as string));
           return;
         }
       }
@@ -257,22 +276,10 @@ export function ProjectModal({
       </ModalGrid>
 
       <ModalGrid>
-        <ModalField label="Deadline" htmlFor="project-deadline">
-          <input
-            id="project-deadline"
-            type="date"
-            value={values.deadline}
-            onChange={(event) => update("deadline", event.target.value)}
-          />
-        </ModalField>
         <ModalField
-          label="Approved Budget"
+          label="Total Budget"
           htmlFor="project-budget"
-          hint={
-            project
-              ? "Locked after creation to protect logged costs."
-              : "Sets the starting remaining budget."
-          }
+          hint={project ? "Editing keeps already-logged costs." : "Sets the starting remaining budget."}
         >
           <input
             id="project-budget"
@@ -281,7 +288,38 @@ export function ProjectModal({
             step="0.01"
             value={values.budget}
             onChange={(event) => update("budget", event.target.value)}
-            readOnly={Boolean(project)}
+            placeholder="0.00"
+          />
+        </ModalField>
+
+        <ModalField
+          label="Materials Budget Allocation"
+          htmlFor="project-materials-budget"
+          hint="Portion of the total budget reserved for materials."
+        >
+          <input
+            id="project-materials-budget"
+            type="number"
+            min="0"
+            step="0.01"
+            value={values.materials}
+            onChange={(event) => update("materials", event.target.value)}
+            placeholder="0.00"
+          />
+        </ModalField>
+
+        <ModalField
+          label="Equipment Budget Allocation"
+          htmlFor="project-equipment-budget"
+          hint="Portion of the total budget reserved for equipment."
+        >
+          <input
+            id="project-equipment-budget"
+            type="number"
+            min="0"
+            step="0.01"
+            value={values.equipment}
+            onChange={(event) => update("equipment", event.target.value)}
             placeholder="0.00"
           />
         </ModalField>

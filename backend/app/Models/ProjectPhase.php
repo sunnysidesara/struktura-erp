@@ -20,6 +20,8 @@ class ProjectPhase extends Model
         'sequence_no',
         'required_skill_id',
         'project_cost',
+        'materials_budget',
+        'equipment_budget',
         'planned_start',
         'planned_end',
         'status',

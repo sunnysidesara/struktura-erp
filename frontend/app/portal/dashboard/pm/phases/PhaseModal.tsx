@@ -5,7 +5,6 @@ import {
   ApiError,
   createPmPhase,
   updatePmPhase,
-  type ApiSkill,
   type PmPhase,
   type PmProject,
 } from "@/lib/api";
@@ -14,26 +13,26 @@ import { FormModal, ModalField, ModalGrid } from "../_components/FormModal";
 const PHASE_STATUSES = ["Not Started", "In Progress", "Completed"];
 
 type Values = {
-  projectId: string;
   name: string;
   description: string;
   sequence: string;
   cost: string;
+  materials: string;
+  equipment: string;
   start: string;
   end: string;
-  skillId: string;
   status: string;
 };
 
 const EMPTY: Values = {
-  projectId: "",
   name: "",
   description: "",
   sequence: "",
   cost: "",
+  materials: "",
+  equipment: "",
   start: "",
   end: "",
-  skillId: "",
   status: "Not Started",
 };
 
@@ -44,21 +43,19 @@ function dateOnly(value: string | null | undefined): string {
 export function PhaseModal({
   open,
   phase,
-  projects,
-  skills,
+  project,
   onClose,
   onSaved,
 }: {
   open: boolean;
   /** The phase being edited, or null to create a new one. */
   phase: PmPhase | null;
-  projects: PmProject[];
-  skills: ApiSkill[];
+  /** The project currently selected in the header; phases always belong to it. */
+  project: PmProject;
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
   const [values, setValues] = useState<Values>(EMPTY);
-  const [projectError, setProjectError] = useState("");
   const [nameError, setNameError] = useState("");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -71,19 +68,18 @@ export function PhaseModal({
     setValues(
       phase
         ? {
-            projectId: String(phase.project_id),
             name: phase.phase_name ?? "",
             description: phase.description ?? "",
             sequence: phase.sequence_no === null || phase.sequence_no === undefined ? "" : String(phase.sequence_no),
             cost: phase.project_cost === null || phase.project_cost === undefined ? "" : String(phase.project_cost),
+            materials: phase.materials_budget === null || phase.materials_budget === undefined ? "" : String(phase.materials_budget),
+            equipment: phase.equipment_budget === null || phase.equipment_budget === undefined ? "" : String(phase.equipment_budget),
             start: dateOnly(phase.planned_start),
             end: dateOnly(phase.planned_end),
-            skillId: phase.required_skill_id ? String(phase.required_skill_id) : "",
             status: phase.status ?? "Not Started",
           }
         : EMPTY,
     );
-    setProjectError("");
     setNameError("");
     setFormError("");
     setSaving(false);
@@ -96,14 +92,8 @@ export function PhaseModal({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setProjectError("");
     setNameError("");
     setFormError("");
-
-    if (!phase && !values.projectId) {
-      setProjectError("Select which project this phase belongs to.");
-      return;
-    }
 
     if (!values.name.trim()) {
       setNameError("Phase name is required.");
@@ -115,10 +105,11 @@ export function PhaseModal({
       description: values.description.trim() || null,
       sequence_no: values.sequence === "" ? null : Number(values.sequence),
       project_cost: values.cost === "" ? null : Number(values.cost),
+      materials_budget: values.materials === "" ? 0 : Number(values.materials),
+      equipment_budget: values.equipment === "" ? 0 : Number(values.equipment),
       planned_start: values.start || null,
       planned_end: values.end || null,
       status: values.status,
-      required_skill_id: values.skillId === "" ? null : Number(values.skillId),
     };
 
     setSaving(true);
@@ -128,7 +119,7 @@ export function PhaseModal({
         await updatePmPhase(phase.phase_id, payload);
         onSaved("Phase updated.");
       } else {
-        await createPmPhase({ ...payload, project_id: Number(values.projectId) });
+        await createPmPhase({ ...payload, project_id: project.project_id });
         onSaved("Phase created.");
       }
     } catch (error) {
@@ -137,10 +128,6 @@ export function PhaseModal({
 
         if (first("phase_name")) {
           setNameError(first("phase_name") as string);
-          return;
-        }
-        if (first("project_id")) {
-          setProjectError(first("project_id") as string);
           return;
         }
       }
@@ -164,20 +151,12 @@ export function PhaseModal({
       saving={saving}
       error={formError}
     >
-      <ModalField label="Project" htmlFor="phase-project" error={projectError}>
-        <select
+      <ModalField label="Project" htmlFor="phase-project">
+        <input
           id="phase-project"
-          value={values.projectId}
-          onChange={(event) => update("projectId", event.target.value)}
-          disabled={Boolean(phase)}
-        >
-          <option value="">Select a project</option>
-          {projects.map((project) => (
-            <option key={project.project_id} value={project.project_id}>
-              {project.project_name}
-            </option>
-          ))}
-        </select>
+          value={`${project.project_name} (${project.code})`}
+          readOnly
+        />
       </ModalField>
 
       <ModalField label="Phase Name" htmlFor="phase-name" error={nameError}>
@@ -220,6 +199,28 @@ export function PhaseModal({
             placeholder="0.00"
           />
         </ModalField>
+        <ModalField label="Materials Budget" htmlFor="phase-materials">
+          <input
+            id="phase-materials"
+            type="number"
+            min="0"
+            step="0.01"
+            value={values.materials}
+            onChange={(event) => update("materials", event.target.value)}
+            placeholder="0.00"
+          />
+        </ModalField>
+        <ModalField label="Equipment Budget" htmlFor="phase-equipment">
+          <input
+            id="phase-equipment"
+            type="number"
+            min="0"
+            step="0.01"
+            value={values.equipment}
+            onChange={(event) => update("equipment", event.target.value)}
+            placeholder="0.00"
+          />
+        </ModalField>
       </ModalGrid>
 
       <ModalGrid>
@@ -242,20 +243,6 @@ export function PhaseModal({
       </ModalGrid>
 
       <ModalGrid>
-        <ModalField label="Required Skill" htmlFor="phase-skill">
-          <select
-            id="phase-skill"
-            value={values.skillId}
-            onChange={(event) => update("skillId", event.target.value)}
-          >
-            <option value="">No specific skill</option>
-            {skills.map((skill) => (
-              <option key={skill.skill_id} value={skill.skill_id}>
-                {skill.skill_name}
-              </option>
-            ))}
-          </select>
-        </ModalField>
         <ModalField label="Status" htmlFor="phase-status">
           <select
             id="phase-status"

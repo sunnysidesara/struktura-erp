@@ -350,11 +350,11 @@ export const getAuditLogins = async () => (await request<{ data: ApiLoginAttempt
 export const searchAll = (q: string) => request<ApiSearchResults>(`/admin/search?q=${encodeURIComponent(q)}`);
 // --- project manager console -------------------------------------------------
 
-export type PmProject = { project_id: number; code: string; project_name: string; client_name: string | null; location: string | null; start_date: string | null; end_date: string | null; deadline: string | null; status: string | null; approved_budget: number; remaining_budget: number; spent_budget: number; utilization: number; phase_count: number; worker_count: number; progress: number; manager_id: string | null; manager_name: string; site_supervisor_id: number | null; site_supervisor: string | null; site_supervisor_code: string | null };
+export type PmProject = { project_id: number; code: string; project_name: string; client_name: string | null; location: string | null; start_date: string | null; end_date: string | null; deadline: string | null; status: string | null; approved_budget: number; materials_budget: number; equipment_budget: number; remaining_budget: number; spent_budget: number; utilization: number; phase_count: number; worker_count: number; progress: number; manager_id: string | null; manager_name: string; site_supervisor_id: number | null; site_supervisor: string | null; site_supervisor_code: string | null };
 
 /** Active Site Supervisor a PM can attach to a project. */
 export type PmSupervisor = { user_id: number; id_number: string; name: string };
-export type PmPhase = { phase_id: number; project_id: number; project: string; phase_name: string | null; description: string | null; sequence_no: number | null; project_cost: number; planned_start: string | null; planned_end: string | null; status: string | null; completion_requested_at?: string | null; required_skill_id: number | null; required_skill: string | null };
+export type PmPhase = { phase_id: number; project_id: number; project: string; phase_name: string | null; description: string | null; sequence_no: number | null; project_cost: number; materials_budget: number; equipment_budget: number; planned_start: string | null; planned_end: string | null; status: string | null; completion_requested_at?: string | null; required_skill_id: number | null; required_skill: string | null };
 export type PmLaborer = { laborer_id: number; first_name: string; last_name: string; hourly_rate: string | number; employment_status: string; project?: string; phase?: string; role_on_task?: string | null; status?: string | null; assignment_id?: number };
 export type PmWorkforce = { available: PmLaborer[]; assigned: PmLaborer[]; skills: Record<string, string[]> };
 export type PmMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; supplier_name: string | null; used_quantity?: number };
@@ -377,6 +377,8 @@ export type PmPhasePayload = {
   description?: string | null;
   sequence_no?: number | null;
   project_cost?: number | null;
+  materials_budget?: number | null;
+  equipment_budget?: number | null;
   planned_start?: string | null;
   planned_end?: string | null;
   status?: string | null;
@@ -413,8 +415,9 @@ export type PmProjectPayload = {
   location?: string | null;
   start_date?: string | null;
   end_date?: string | null;
-  deadline?: string | null;
   approved_budget?: number | null;
+  materials_budget?: number | null;
+  equipment_budget?: number | null;
   status?: string | null;
   site_supervisor_id?: number | null;
 };
@@ -608,6 +611,9 @@ export type SsLaborLog = {
   log_id: number;
   assignment_id: number;
   date: string;
+  shift: string;
+  time_in: string | null;
+  time_out: string | null;
   worker: string;
   regular: number;
   overtime: number;
@@ -627,6 +633,7 @@ export type SsMaterialLog = {
   material: string;
   quantity: number;
   unit: string | null;
+  expense: number;
   phase_id: number;
   phase: string | null;
   project_id: number;
@@ -641,6 +648,7 @@ export type SsEquipmentLog = {
   date: string;
   equipment: string;
   hours: number;
+  expense: number;
   phase_id: number;
   phase: string | null;
   project_id: number;
@@ -801,8 +809,11 @@ export const getSsLogHours = (projectId?: number | null) =>
 export type SsLaborLogBody = {
   assignment_id: number;
   log_date: string;
-  regular_hours: number;
-  overtime_hours: number;
+  shift?: string;
+  time_in?: string | null;
+  time_out?: string | null;
+  regular_hours?: number;
+  overtime_hours?: number;
 };
 export const createSsLaborLog = (body: SsLaborLogBody) =>
   request<SsWriteResponse>("/ss/log-hours", { method: "POST", body });

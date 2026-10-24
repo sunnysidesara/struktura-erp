@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PmController extends Controller
 {
@@ -225,6 +226,8 @@ class PmController extends Controller
                 'p.deadline',
                 'p.status',
                 'p.approved_budget',
+                'p.materials_budget',
+                'p.equipment_budget',
                 'p.remaining_budget',
                 'u.id_number as manager_id',
                 'u.first_name as manager_first_name',
@@ -257,6 +260,8 @@ class PmController extends Controller
                     'deadline' => $row->deadline,
                     'status' => $row->status,
                     'approved_budget' => $approved,
+                    'materials_budget' => round((float) $row->materials_budget, 2),
+                    'equipment_budget' => round((float) $row->equipment_budget, 2),
                     'remaining_budget' => $remaining,
                     'spent_budget' => round($spent, 2),
                     'utilization' => $approved > 0 ? (int) round(($spent / $approved) * 100) : 0,
@@ -337,6 +342,8 @@ class PmController extends Controller
                 'ph.description',
                 'ph.sequence_no',
                 'ph.project_cost',
+                'ph.materials_budget',
+                'ph.equipment_budget',
                 'ph.planned_start',
                 'ph.planned_end',
                 'ph.status',
@@ -355,6 +362,8 @@ class PmController extends Controller
                 'description' => $row->description,
                 'sequence_no' => $row->sequence_no,
                 'project_cost' => (float) $row->project_cost,
+                'materials_budget' => (float) $row->materials_budget,
+                'equipment_budget' => (float) $row->equipment_budget,
                 'planned_start' => $row->planned_start,
                 'planned_end' => $row->planned_end,
                 'status' => $row->status,
@@ -374,6 +383,14 @@ class PmController extends Controller
         $data = $this->validateProject($request, true);
         $userId = $request->user()->user_id;
         $approved = (float) ($data['approved_budget'] ?? 0);
+        $materials = array_key_exists('materials_budget', $data) && $data['materials_budget'] !== null
+            ? (float) $data['materials_budget']
+            : round($approved * 0.50, 2);
+        $equipment = array_key_exists('equipment_budget', $data) && $data['equipment_budget'] !== null
+            ? (float) $data['equipment_budget']
+            : round($approved * 0.15, 2);
+
+        $this->assertAllocations($approved, $materials, $equipment);
 
         $project = Project::create([
             'project_name' => $data['project_name'],
@@ -381,12 +398,11 @@ class PmController extends Controller
             'location' => $data['location'] ?? null,
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
-            'deadline' => $data['deadline'] ?? null,
-            'approved_budget' => $approved,
-            // Resource allocations follow the site-wide default split so the
-            // supervisor console always has a materials/equipment budget.
-            'materials_budget' => round($approved * 0.50, 2),
-            'equipment_budget' => round($approved * 0.15, 2),
+            'approved_budget' => round($approved, 2),
+            // Allocations come from the PM form; the split above only applies
+            // when the request omits them.
+            'materials_budget' => round($materials, 2),
+            'equipment_budget' => round($equipment, 2),
             // A brand-new project has spent nothing yet.
             'remaining_budget' => $approved,
             'status' => $data['status'] ?? 'On Track',
@@ -416,17 +432,21 @@ class PmController extends Controller
 
         $data = $this->validateProject($request);
 
-        $allocations = [];
+        $currentApproved = (float) $project->approved_budget;
+        $approved = array_key_exists('approved_budget', $data) && $data['approved_budget'] !== null
+            ? (float) $data['approved_budget']
+            : $currentApproved;
+        $materials = array_key_exists('materials_budget', $data) && $data['materials_budget'] !== null
+            ? (float) $data['materials_budget']
+            : (float) $project->materials_budget;
+        $equipment = array_key_exists('equipment_budget', $data) && $data['equipment_budget'] !== null
+            ? (float) $data['equipment_budget']
+            : (float) $project->equipment_budget;
 
-        // Legacy rows created before resource budgets existed get the default
-        // split the first time a PM saves them.
-        if ((float) $project->materials_budget === 0.0 && (float) $project->equipment_budget === 0.0) {
-            $approved = (float) $project->approved_budget;
-            $allocations = [
-                'materials_budget' => round($approved * 0.50, 2),
-                'equipment_budget' => round($approved * 0.15, 2),
-            ];
-        }
+        $this->assertAllocations($approved, $materials, $equipment);
+
+        // Spend already posted against the project must survive a budget edit.
+        $spent = max(0.0, round($currentApproved - (float) $project->remaining_budget, 2));
 
         $project->update([
             'project_name' => $data['project_name'],
@@ -434,11 +454,13 @@ class PmController extends Controller
             'location' => $data['location'] ?? null,
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
-            'deadline' => $data['deadline'] ?? null,
             'status' => $data['status'] ?? $project->status,
             'site_supervisor_id' => $data['site_supervisor_id'] ?? $project->site_supervisor_id,
+            'approved_budget' => round($approved, 2),
+            'materials_budget' => round($materials, 2),
+            'equipment_budget' => round($equipment, 2),
+            'remaining_budget' => round(max(0.0, $approved - $spent), 2),
             'updated_by' => $request->user()->user_id,
-            ...$allocations,
         ]);
 
         return response()->json([
@@ -450,6 +472,18 @@ class PmController extends Controller
     /**
      * @return array<string, mixed>
      */
+    /**
+     * Resource allocations can never exceed the total approved budget.
+     */
+    private function assertAllocations(float $approved, float $materials, float $equipment): void
+    {
+        if (round($materials + $equipment, 2) > round($approved, 2)) {
+            throw ValidationException::withMessages([
+                'materials_budget' => ['Materials plus equipment allocation cannot exceed the total budget.'],
+            ]);
+        }
+    }
+
     private function validateProject(Request $request, bool $supervisorRequired = false): array
     {
         $supervisorRoleId = DB::table('role')
@@ -466,8 +500,9 @@ class PmController extends Controller
             'location' => ['nullable', 'string', 'max:255'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date'],
-            'deadline' => ['nullable', 'date'],
             'approved_budget' => ['nullable', 'numeric', 'min:0'],
+            'materials_budget' => ['nullable', 'numeric', 'min:0'],
+            'equipment_budget' => ['nullable', 'numeric', 'min:0'],
             'status' => ['nullable', Rule::in(self::PROJECT_STATUSES)],
             // A project cannot reach the site without a supervisor.
             'site_supervisor_id' => $supervisorRequired
@@ -500,6 +535,8 @@ class PmController extends Controller
             'description' => $data['description'] ?? null,
             'sequence_no' => $data['sequence_no'] ?? null,
             'project_cost' => $data['project_cost'] ?? null,
+            'materials_budget' => $data['materials_budget'] ?? 0,
+            'equipment_budget' => $data['equipment_budget'] ?? 0,
             'planned_start' => $data['planned_start'] ?? null,
             'planned_end' => $data['planned_end'] ?? null,
             'status' => $data['status'] ?? 'Not Started',
@@ -782,6 +819,8 @@ class PmController extends Controller
             'description' => $data['description'] ?? null,
             'sequence_no' => $data['sequence_no'] ?? null,
             'project_cost' => $data['project_cost'] ?? null,
+            'materials_budget' => $data['materials_budget'] ?? 0,
+            'equipment_budget' => $data['equipment_budget'] ?? 0,
             'planned_start' => $data['planned_start'] ?? null,
             'planned_end' => $data['planned_end'] ?? null,
             'status' => $data['status'] ?? $model->status,
@@ -840,6 +879,8 @@ class PmController extends Controller
             'description' => ['nullable', 'string', 'max:255'],
             'sequence_no' => ['nullable', 'integer', 'min:1'],
             'project_cost' => ['nullable', 'numeric', 'min:0'],
+            'materials_budget' => ['nullable', 'numeric', 'min:0'],
+            'equipment_budget' => ['nullable', 'numeric', 'min:0'],
             'planned_start' => ['nullable', 'date'],
             'planned_end' => ['nullable', 'date'],
             'status' => ['nullable', Rule::in(['Not Started', 'In Progress', 'Completed'])],

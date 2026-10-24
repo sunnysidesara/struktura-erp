@@ -172,3 +172,6 @@ SET p.remaining_budget = p.approved_budget - (
               WHERE ph3.project_id = p.project_id), 0)
 )
 WHERE p.project_id BETWEEN 1 AND 5;
+
+-- Spread the demo attendance across both shifts so the Workers Log filter has data.
+UPDATE labor_hour_log SET shift = CASE WHEN log_id % 2 = 0 THEN 'Afternoon' ELSE 'Morning' END;

@@ -354,3 +354,12 @@
   }
 }
 
+
+/* Inline validation message shown under a single input. */.fieldError {
+  margin: 0.35rem 0 0;
+  color: #b91c1c;
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
