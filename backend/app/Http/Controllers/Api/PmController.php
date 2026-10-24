@@ -373,6 +373,7 @@ class PmController extends Controller
     {
         $data = $this->validateProject($request, true);
         $userId = $request->user()->user_id;
+        $approved = (float) ($data['approved_budget'] ?? 0);
 
         $project = Project::create([
             'project_name' => $data['project_name'],
@@ -381,9 +382,13 @@ class PmController extends Controller
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
             'deadline' => $data['deadline'] ?? null,
-            'approved_budget' => $data['approved_budget'] ?? 0,
+            'approved_budget' => $approved,
+            // Resource allocations follow the site-wide default split so the
+            // supervisor console always has a materials/equipment budget.
+            'materials_budget' => round($approved * 0.50, 2),
+            'equipment_budget' => round($approved * 0.15, 2),
             // A brand-new project has spent nothing yet.
-            'remaining_budget' => $data['approved_budget'] ?? 0,
+            'remaining_budget' => $approved,
             'status' => $data['status'] ?? 'On Track',
             // Ownership is always the PM creating it.
             'user_id' => $userId,
@@ -411,6 +416,18 @@ class PmController extends Controller
 
         $data = $this->validateProject($request);
 
+        $allocations = [];
+
+        // Legacy rows created before resource budgets existed get the default
+        // split the first time a PM saves them.
+        if ((float) $project->materials_budget === 0.0 && (float) $project->equipment_budget === 0.0) {
+            $approved = (float) $project->approved_budget;
+            $allocations = [
+                'materials_budget' => round($approved * 0.50, 2),
+                'equipment_budget' => round($approved * 0.15, 2),
+            ];
+        }
+
         $project->update([
             'project_name' => $data['project_name'],
             'client_name' => $data['client_name'] ?? null,
@@ -421,6 +438,7 @@ class PmController extends Controller
             'status' => $data['status'] ?? $project->status,
             'site_supervisor_id' => $data['site_supervisor_id'] ?? $project->site_supervisor_id,
             'updated_by' => $request->user()->user_id,
+            ...$allocations,
         ]);
 
         return response()->json([

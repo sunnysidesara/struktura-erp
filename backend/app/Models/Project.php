@@ -25,6 +25,8 @@ class Project extends Model
         'start_date',
         'end_date',
         'approved_budget',
+        'materials_budget',
+        'equipment_budget',
         'remaining_budget',
         'deadline',
         'status',
