@@ -30,7 +30,7 @@ export default function PortalPage() {
     const trimmedPassword = password.trim();
 
     if (!trimmedIdNumber || !trimmedPassword) {
-      setError("Please enter both ID Number and Password.");
+      setError("Please enter both User ID and Password.");
       idNumberRef.current?.focus();
       return;
     }
@@ -111,7 +111,7 @@ export default function PortalPage() {
           <form className={styles.form} onSubmit={handleSubmit} noValidate>
             <div className={styles.fieldGroup}>
               <label htmlFor="idNumber" className={styles.label}>
-                ID NUMBER
+                USER ID
               </label>
               <input
                 id="idNumber"

@@ -1,408 +1,143 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import styles from "./page.module.css";
+import { getSsDashboard, type SsDashboard, type SsSubmission } from "@/lib/api";
+import {
+  MetricCard,
+  MetricGrid,
+  SaPage,
+  SaPanel,
+  SaTable,
+  StatusBadge,
+  type SaColumn,
+} from "@/app/portal/dashboard/sa/_components/SaPage";
+import { BarChart, ProgressBar } from "./_components/SsReport";
+import ssStyles from "./ss.module.css";
 
-type UserInfo = {
-  user_id: string;
-  first_name: string;
-  last_name: string;
-  role: string;
-};
-
-type Worker = { name: string; skill: string };
-type Phase = { phase: string; completion: number; current: boolean };
-
-// Replace these mock site records with site-scoped API responses later.
-// Supervisors have no wage, budget, or financial fields in this view by design.
-const workers: Worker[] = [
-  { name: "Rene Dela Vega", skill: "Carpenter" },
-  { name: "Carlito Mendez", skill: "Mason" },
-  { name: "Marielle Ramos", skill: "Surveyor" },
-  { name: "Victor Ocampo", skill: "Concrete Crew" },
-  { name: "Anya Santos", skill: "Safety Officer" },
+const submissionColumns: SaColumn<SsSubmission>[] = [
+  { key: "date", label: "Date", render: (row) => row.date },
+  { key: "labor", label: "Labor (hrs)", render: (row) => row.labor.toFixed(1) },
+  { key: "materials", label: "Material Entries", render: (row) => String(row.materials) },
+  { key: "equipment", label: "Equipment (hrs)", render: (row) => row.equipment.toFixed(1) },
+  { key: "status", label: "Status", status: true, render: (row) => <StatusBadge status={row.status} /> },
 ];
 
-const phases: Phase[] = [
-  { phase: "Phase 1 — Excavation", completion: 100, current: false },
-  { phase: "Phase 2 — Foundation Works", completion: 86, current: false },
-  {
-    phase: "Phase 3 — Structural Reinforcement",
-    completion: 68,
-    current: true,
-  },
-  { phase: "Phase 4 — Finishing", completion: 34, current: false },
-];
+export default function SiteSupervisorOverview() {
+  const [data, setData] = useState<SsDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-const recentSubmissions = [
-  {
-    date: "2026-10-03",
-    labor: "24 hrs",
-    materials: "32 units",
-    equipment: "4 hrs",
-    status: "Submitted",
-  },
-  {
-    date: "2026-10-02",
-    labor: "22 hrs",
-    materials: "28 units",
-    equipment: "5 hrs",
-    status: "Submitted",
-  },
-  {
-    date: "2026-10-01",
-    labor: "20 hrs",
-    materials: "18 units",
-    equipment: "3 hrs",
-    status: "Pending Approval",
-  },
-  {
-    date: "2026-09-30",
-    labor: "21 hrs",
-    materials: "24 units",
-    equipment: "4 hrs",
-    status: "Submitted",
-  },
-  {
-    date: "2026-09-29",
-    labor: "19 hrs",
-    materials: "20 units",
-    equipment: "3 hrs",
-    status: "Submitted",
-  },
-  {
-    date: "2026-09-28",
-    labor: "18 hrs",
-    materials: "22 units",
-    equipment: "4 hrs",
-    status: "Submitted",
-  },
-];
-
-export default function SiteSupervisorDashboard() {
-  const [user, setUser] = useState<UserInfo | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-
+  // Portfolio overview: totals across every site assigned to this supervisor.
   useEffect(() => {
-    const storedUser = localStorage.getItem("struktura_user");
-    if (storedUser) {
-      setUser(JSON.parse(storedUser) as UserInfo);
-    }
+    let active = true;
+
+    getSsDashboard()
+      .then((value) => {
+        if (!active) return;
+        setData(value);
+        setError("");
+      })
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Failed to load site data.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const today = new Date().toISOString().split("T")[0];
+  const site = data?.site ?? null;
+  const metrics = data?.metrics;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.shell}>
-        <header className={styles.heroRow}>
-          <div>
-            <h1 className={styles.title}>Site Dashboard</h1>
-            <p className={styles.subtitle}>Record and submit daily site data</p>
-          </div>
-        </header>
+    <SaPage
+      kicker="Site Supervisor"
+      title="Site Overview"
+      subtitle="Record daily site data and monitor your assigned project."
+    >
+      {loading ? (
+        <SaPanel title="Loading">
+          <p className={ssStyles.muted}>Loading live site data...</p>
+        </SaPanel>
+      ) : null}
 
-        <aside className={styles.siteBanner} id="my-site">
-          <div>
-            <div className={styles.bannerLabel}>Assigned Site</div>
-            <div className={styles.bannerTitle}>
-              Bridge Rehabilitation — Phase 2
-            </div>
-            <div className={styles.bannerMeta}>
-              Quezon City · Phase 2 of 4 · Supervisor: SS101
-            </div>
-          </div>
-        </aside>
+      {error !== "" ? (
+        <SaPanel title="Could not load">
+          <p className={ssStyles.noticeError}>{error}</p>
+        </SaPanel>
+      ) : null}
 
-        <section className={styles.metricGrid} id="overview">
-          <article className={styles.metricCard}>
-            <span className={styles.metricLabel}>My Workers Today</span>
-            <strong className={styles.metricValue}>12</strong>
-            <small className={styles.metricNote}>Assigned to this site</small>
-          </article>
-          <article className={styles.metricCard}>
-            <span className={styles.metricLabel}>Hours Logged Today</span>
-            <strong className={styles.metricValue}>21.5</strong>
-            <small className={styles.metricNote}>Across 3 workers</small>
-          </article>
-          <article className={styles.metricCard}>
-            <span className={styles.metricLabel}>Materials Used Today</span>
-            <strong className={styles.metricValue}>32</strong>
-            <small className={styles.metricNote}>Recorded units</small>
-          </article>
-        </section>
+      {!loading && error === "" && !site ? (
+        <SaPanel title="No site assigned">
+          <p className={ssStyles.notice}>
+            No project is assigned to this account yet. Ask a Project Manager to assign you to a
+            project.
+          </p>
+        </SaPanel>
+      ) : null}
 
-        <section className={styles.panel} id="daily-record">
-          <div className={styles.panelHeader}>
-            <span>Record Today&apos;s Data</span>
-          </div>
-
-          <div className={styles.fieldGroup}>
-            <label className={styles.label}>Date</label>
-            <input
-              type="date"
-              defaultValue={today}
-              className={styles.dateInput}
-              max={today}
-            />
-          </div>
-
-          <div className={styles.sectionBlock}>
-            <h3>Labor Hours</h3>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Worker Name</th>
-                    <th>Hours</th>
-                    <th>Remove</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>Rene Dela Vega</td>
-                    <td>
-                      <input defaultValue="8" />
-                    </td>
-                    <td>
-                      <button type="button" className={styles.removeButton}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Carlito Mendez</td>
-                    <td>
-                      <input defaultValue="7.5" />
-                    </td>
-                    <td>
-                      <button type="button" className={styles.removeButton}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Marielle Ramos</td>
-                    <td>
-                      <input defaultValue="6" />
-                    </td>
-                    <td>
-                      <button type="button" className={styles.removeButton}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <button type="button" className={styles.linkButton}>
-              + Add Worker
-            </button>
-            <div className={styles.grandTotal}>
-              Total hours logged: 21.5 hrs
-            </div>
-          </div>
-
-          <div className={styles.sectionBlock}>
-            <h3>Materials Used</h3>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Material</th>
-                    <th>Quantity</th>
-                    <th>Unit</th>
-                    <th>Notes</th>
-                    <th>Remove</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      <select defaultValue="cement">
-                        <option value="cement">Cement</option>
-                        <option value="steel">Steel Bars</option>
-                        <option value="sand">Sand</option>
-                      </select>
-                    </td>
-                    <td>
-                      <input defaultValue="20" />
-                    </td>
-                    <td>
-                      <input defaultValue="bags" />
-                    </td>
-                    <td>
-                      <input defaultValue="Used for slab" />
-                    </td>
-                    <td>
-                      <button type="button" className={styles.removeButton}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <select defaultValue="gravel">
-                        <option value="gravel">Gravel</option>
-                        <option value="cement">Cement</option>
-                        <option value="steel">Steel Bars</option>
-                      </select>
-                    </td>
-                    <td>
-                      <input defaultValue="12" />
-                    </td>
-                    <td>
-                      <input defaultValue="tons" />
-                    </td>
-                    <td>
-                      <input defaultValue="Backfill" />
-                    </td>
-                    <td>
-                      <button type="button" className={styles.removeButton}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <button type="button" className={styles.linkButton}>
-              + Add Material
-            </button>
-          </div>
-
-          <div className={styles.sectionBlock}>
-            <h3>Equipment Used</h3>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Equipment</th>
-                    <th>Hours Used</th>
-                    <th>Notes</th>
-                    <th>Remove</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>
-                      <select defaultValue="excavator">
-                        <option value="excavator">Excavator</option>
-                        <option value="bulldozer">Bulldozer</option>
-                        <option value="loader">Loader</option>
-                      </select>
-                    </td>
-                    <td>
-                      <input defaultValue="4" />
-                    </td>
-                    <td>
-                      <input defaultValue="Used trenching" />
-                    </td>
-                    <td>
-                      <button type="button" className={styles.removeButton}>
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <button type="button" className={styles.linkButton}>
-              + Add Equipment
-            </button>
-          </div>
-
-          <button
-            type="button"
-            className={styles.submitButton}
-            onClick={() => setSubmitted(true)}
+      {site ? (
+        <>
+          <section
+            style={{
+              background: "linear-gradient(135deg, #0a1440 0%, #14245c 100%)",
+              borderRadius: "10px",
+              padding: "1.5rem",
+              color: "#ffffff",
+            }}
           >
-            Submit Daily Record
-          </button>
-          {submitted ? (
-            <div className={styles.successPanel}>
-              ✓ Record submitted successfully at{" "}
-              {new Date().toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </div>
-          ) : null}
-        </section>
+            <p style={{ margin: 0, fontSize: "0.66rem", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#ca8a04" }}>
+              Assigned Site
+            </p>
+            <h2 style={{ margin: "0.35rem 0 0", fontSize: "1.45rem", fontWeight: 800 }}>{site.project}</h2>
+            <p style={{ margin: "0.3rem 0 0", fontSize: "0.85rem", color: "#c7d2fe" }}>
+              {site.location ?? "-"} &middot; Client: {site.client ?? "-"} &middot; Supervisor: {site.supervisor || "-"}
+            </p>
+            <p style={{ margin: "0.15rem 0 0", fontSize: "0.8rem", color: "#93c5fd" }}>
+              Current phase: {site.currentPhase ?? "Not started"} &middot; {site.startDate ?? "-"} to {site.endDate ?? "-"}
+            </p>
+          </section>
 
-        <section className={styles.twoCol}>
-          <div className={styles.panel} id="my-workers">
-            <div className={styles.panelHeader}>
-              <span>My Assigned Workers</span>
-            </div>
-            <div className={styles.workerGrid}>
-              {workers.map((worker) => (
-                <div className={styles.workerCard} key={worker.name}>
-                  <div className={styles.avatar}>{worker.name.charAt(0)}</div>
-                  <div className={styles.workerText}>
-                    <strong>{worker.name}</strong>
-                    <span>{worker.skill}</span>
+          <MetricGrid>
+            <MetricCard label="Labor Hours Today" value={`${metrics?.labor_hours_today ?? 0} hrs`} note={`As of ${data?.server_date}`} />
+            <MetricCard label="Material Entries Today" value={String(metrics?.material_entries_today ?? 0)} note="Usage lines recorded" />
+            <MetricCard label="Equipment Hours Today" value={`${metrics?.equipment_hours_today ?? 0} hrs`} note="Machine hours logged" />
+            <MetricCard label="Active Phases" value={String(metrics?.active_phases ?? 0)} note={`${metrics?.total_phases ?? 0} phases total`} />
+          </MetricGrid>
+
+          <SaPanel title="Labor hours - last 7 days">
+            <BarChart data={data?.labor_series ?? []} />
+          </SaPanel>
+
+          <SaPanel title="Phase progress">
+            <div style={{ display: "grid", gap: "1rem" }}>
+              {(data?.phases ?? []).map((phase) => (
+                <div key={phase.id}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", marginBottom: "0.4rem" }}>
+                    <strong style={{ fontSize: "0.86rem", color: "#0f172a" }}>
+                      {phase.sequence}. {phase.name}
+                    </strong>
+                    <StatusBadge status={phase.status} />
                   </div>
+                  <ProgressBar value={phase.progress} />
                 </div>
               ))}
             </div>
-          </div>
+          </SaPanel>
 
-          <div className={styles.panel} id="current-phases">
-            <div className={styles.panelHeader}>
-              <span>Current Project Phases</span>
-            </div>
-            <ul className={styles.phaseList}>
-              {phases.map((phase) => (
-                <li
-                  key={phase.phase}
-                  className={
-                    phase.current ? styles.phaseCurrent : styles.phaseItem
-                  }
-                >
-                  <div className={styles.phaseMeta}>
-                    <strong>{phase.phase}</strong>
-                    <span>{phase.completion}%</span>
-                  </div>
-                  <div className={styles.phaseTrack}>
-                    <span style={{ width: `${phase.completion}%` }} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        <section className={styles.panel} id="submission-history">
-          <div className={styles.panelHeader}>
-            <span>My Recent Submissions</span>
-          </div>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Labor Hours</th>
-                  <th>Materials Qty</th>
-                  <th>Equipment Hours</th>
-                  <th className={styles.statusColumn}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentSubmissions.map((row) => (
-                  <tr key={`${row.date}-${row.status}`}>
-                    <td>{row.date}</td>
-                    <td>{row.labor}</td>
-                    <td>{row.materials}</td>
-                    <td>{row.equipment}</td>
-                    <td className={styles.statusColumn}>{row.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </div>
+          <SaPanel title="Recent daily submissions">
+            <SaTable
+              columns={submissionColumns}
+              rows={data?.submissions ?? []}
+              rowKey={(row) => row.date}
+              emptyText="No activity logged in the last 7 days."
+            />
+          </SaPanel>
+        </>
+      ) : null}
+    </SaPage>
   );
 }

@@ -11,6 +11,9 @@
   --ink: #10182f;
   --slate: #697087;
   --line: #dcdacb;
+
+  /* Opt out of the browser's automatic dark mode (see app/layout.tsx). */
+  color-scheme: light;
 }
 
 * {

@@ -17,3 +17,34 @@ Rather than relying on client-side application scripts or manual spreadsheet ent
 Construction firms often rely on spreadsheets and separate records to manage workers, skills, project phases, resources, and project costs. This makes resource allocation difficult and causes delays in detecting changes in project costs.
 
 Struktura ERP centralizes these operations and uses database-level automation to record resource usage, calculate operational costs, update project budgets, and maintain data integrity.
+
+## Running Locally
+
+Two processes are required: the Laravel API (`/backend`) and the Next.js app (`/frontend`).
+
+```powershell
+# Terminal 1 — Laravel API on 0.0.0.0:8000
+cd backend
+php artisan serve --host=0.0.0.0 --port=8000
+
+# Terminal 2 — Next.js on 0.0.0.0:3000
+cd frontend
+npm run dev
+```
+
+`--host=0.0.0.0` is required for the app to work from another device (phone/tablet) or
+through the machine's LAN address. `php artisan serve` alone binds to `127.0.0.1`
+only, so `http://<lan-ip>:8000` refuses the connection and the frontend reports
+"Cannot reach the server".
+
+The frontend derives the API URL from the browser host (`lib/api.ts`), so
+`http://localhost:3000` calls `http://localhost:8000/api/v1` and
+`http://172.16.0.2:3000` calls `http://172.16.0.2:8000/api/v1`. To pin a fixed URL,
+set `NEXT_PUBLIC_API_BASE_URL` in `frontend/.env.local` (include the `/api/v1` suffix).
+
+When opening the app over the LAN, allow it on the backend too:
+
+- `CORS_ALLOWED_ORIGINS` / `CORS_ALLOWED_ORIGIN_PATTERNS` in `backend/.env`
+- `allowedDevOrigins` in `frontend/next.config.ts`
+- Windows Firewall must permit inbound TCP on ports 3000 and 8000
+

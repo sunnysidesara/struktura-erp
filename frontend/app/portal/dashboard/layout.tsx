@@ -3,7 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import styles from "./layout.module.css";
 import {
   getSidebarData,
@@ -12,12 +19,15 @@ import {
   type SidebarSection,
 } from "./sidebarData";
 import {
+  ApiError,
   clearSession,
+  getMyNotifications,
   getStoredUser,
   getToken,
   logout as apiLogout,
   me,
   toSessionUser,
+  type ApiNotification,
   type SessionUser,
 } from "@/lib/api";
 
@@ -29,7 +39,22 @@ const roleLabels: Record<UserRole, string> = {
   SS: "Site Supervisor",
 };
 
-type UtilityIcon = "bell" | "chevron" | "menu" | "close";
+// The header search box replaces the old sidebar "Search" link: it always jumps
+// to the search screen that belongs to the signed-in role.
+const roleSearchPath: Record<UserRole, string> = {
+  SA: "/portal/dashboard/sa/search",
+  PM: "/portal/dashboard/pm/search",
+  SS: "/portal/dashboard/ss/search",
+};
+
+type UtilityIcon =
+  | "bell"
+  | "chevron"
+  | "menu"
+  | "close"
+  | "logout"
+  | "check"
+  | "spark";
 
 const iconPaths: Record<IconName | UtilityIcon, string> = {
   home: "M3 10.5 12 3l9 7.5M5.5 9v11h13V9M9 20v-6h6v6",
@@ -69,6 +94,9 @@ const iconPaths: Record<IconName | UtilityIcon, string> = {
   chevron: "m7 10 5 5 5-5",
   menu: "M4 6h16M4 12h16M4 18h16",
   close: "m6 6 12 12M18 6 6 18",
+  logout: "M15 12H3m4-4-4 4 4 4m5-13h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5",
+  check: "m5 13 4 4L19 7",
+  spark: "M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z",
 };
 
 function Icon({
@@ -94,6 +122,127 @@ function Icon({
   );
 }
 
+const NOTIFICATIONS_READ_KEY = "struktura_notifications_read";
+const NOTIFICATIONS_POLL_MS = 30_000;
+
+/** Human title for an audit event, e.g. INSERT on users -> "New user created". */
+function notificationTitle(item: ApiNotification): string {
+  const action = item.action.toLowerCase();
+  const table = item.table_name;
+  const fields = item.changed_fields.map((field) => field.toLowerCase());
+
+  if (table === "users") {
+    if (action === "insert") return "New user created";
+    if (action === "update") return "User account updated";
+    return "User account deleted";
+  }
+
+  if (table === "skill") {
+    if (action === "insert") return "New skill added";
+    if (action === "update") return "Skill updated";
+    return "Skill removed";
+  }
+
+  if (table === "projects") {
+    if (action === "insert") return "New project created";
+    if (action === "delete") return "Project deleted";
+    if (fields.some((field) => field.includes("budget"))) {
+      return "Project budget updated";
+    }
+    if (fields.includes("status")) return "Project status updated";
+    return "Project updated";
+  }
+
+  if (table === "project_phases") {
+    if (action === "insert") return "New phase created";
+    if (action === "delete") return "Phase removed";
+    if (fields.includes("status")) return "Phase status updated";
+    return "Phase updated";
+  }
+
+  if (table === "labor_hour_log") {
+    if (action === "insert") return "Labor hours logged";
+    if (action === "delete") return "Labor log voided";
+    return "Labor log corrected";
+  }
+
+  if (table === "material_usage") {
+    if (action === "insert") return "Material usage recorded";
+    if (action === "delete") return "Material log voided";
+    return "Material log corrected";
+  }
+
+  if (table === "equipment_usage") {
+    if (action === "insert") return "Equipment usage recorded";
+    if (action === "delete") return "Equipment log voided";
+    return "Equipment log corrected";
+  }
+
+  if (table === "materials") {
+    return "Material stock updated";
+  }
+
+  if (table === "workforce_assignment") {
+    if (action === "insert") return "Worker assigned to a phase";
+    if (action === "delete") return "Worker removed from a phase";
+    return "Worker assignment updated";
+  }
+
+  const label = table.replace(/_/g, " ").replace(/s$/, "");
+
+  if (action === "insert") return `New ${label} added`;
+  if (action === "update") return `${label} updated`;
+  return `${label} removed`;
+}
+
+/** "North Tower Residences · SYS010001 - Jane Cruz" */
+function notificationDetail(item: ApiNotification): string {
+  return (
+    [item.project_name, item.actor].filter(Boolean).join(" \u00b7 ") ||
+    item.table_name
+  );
+}
+
+function timeAgo(value: string | null): string {
+  if (!value) return "";
+
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) return "";
+
+  const minutes = Math.floor((Date.now() - then) / 60_000);
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Yesterday";
+  if (days < 7) return `${days} days ago`;
+
+  return new Date(then).toLocaleDateString("en-PH", {
+    month: "short",
+    day: "2-digit",
+  });
+}
+
+/** Ids the user has already dismissed ("Mark all as read"). */
+function readStoredNotificationIds(): number[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(NOTIFICATIONS_READ_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is number => typeof value === "number")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 const rolePath: Record<UserRole, string> = {
   SA: "/portal/dashboard/sa",
   PM: "/portal/dashboard/pm",
@@ -103,9 +252,26 @@ const rolePath: Record<UserRole, string> = {
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const headerRef = useRef<HTMLElement | null>(null);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // Manual accordion override: an override is only honoured while the route is
+  // unchanged, so the group that owns the current page is always the open one.
+  const [groupOverride, setGroupOverride] = useState<{
+    id: string | null;
+    path: string;
+  } | null>(null);
+  const [openMenu, setOpenMenu] = useState<"notifications" | "profile" | null>(
+    null,
+  );
+  const [notifications, setNotifications] = useState<ApiNotification[]>([]);
+  const [notificationsError, setNotificationsError] = useState(false);
+  const [readNotificationIds, setReadNotificationIds] = useState<number[]>(
+    readStoredNotificationIds,
+  );
+  const [notificationsRefresh, setNotificationsRefresh] = useState(0);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     const token = getToken();
@@ -129,6 +295,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       return;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(storedUser);
 
     // Confirm the token is still valid with the backend; sign out if not.
@@ -141,10 +308,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           setUser(sessionUser);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!active) return;
-        clearSession();
-        router.replace("/portal");
+        // A failed /me only means "signed out" when the server explicitly
+        // rejects the token. Network errors (status 0) or 5xx responses are
+        // transient and must not wipe a valid session, otherwise a slow or
+        // restarting backend bounces the user straight back to the login page.
+        console.error("[dashboard] auth check failed", err);
+        const rejected =
+          err instanceof ApiError && (err.status === 401 || err.status === 403);
+        if (rejected) {
+          clearSession();
+          router.replace("/portal");
+        }
       });
 
     return () => {
@@ -157,52 +333,141 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     [user],
   );
 
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
+  // Accordion behaviour: only the section that owns the current route is open.
+  // Clicking a group stores an override for this path; navigating resets it.
+  const activeGroupId = useMemo(() => {
     const groups = sidebarData.flatMap((section: SidebarSection) =>
       section.items.filter(
         (item): item is SidebarGroup => item.type === "group",
       ),
     );
-    const activeGroupIds = groups
-      .filter((group) =>
-        group.children.some(
-          (child) =>
-            pathname === child.href || pathname.startsWith(`${child.href}/`),
-        ),
-      )
-      .map((group) => group.id);
+    const activeGroup = groups.find((group) =>
+      group.children.some(
+        (child) =>
+          pathname === child.href || pathname.startsWith(`${child.href}/`),
+      ),
+    );
 
-    setExpandedGroups((current) => {
-      const next = new Set(current);
-      activeGroupIds.forEach((id) => next.add(id));
-      return next;
-    });
-  }, [pathname, sidebarData, user]);
+    return activeGroup ? activeGroup.id : null;
+  }, [pathname, sidebarData]);
 
-  const toggleGroup = (id: string) => {
-    setExpandedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
+  const openGroup =
+    groupOverride && groupOverride.path === pathname
+      ? groupOverride.id
+      : activeGroupId;
+
+  // Close both header dropdowns and the mobile drawer on navigation.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOpenMenu(null);
+    setDrawerOpen(false);
+  }, [pathname]);
+
+  // Live notifications (audit_logs): refresh on navigation, whenever the bell is
+  // opened, and every 30s while the dashboard stays open.
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let active = true;
+
+    const load = () => {
+      getMyNotifications()
+        .then((items) => {
+          if (!active) return;
+
+          setNotifications(items);
+          setNotificationsError(false);
+        })
+        .catch(() => {
+          if (active) setNotificationsError(true);
+        });
+    };
+
+    load();
+    const timer = window.setInterval(load, NOTIFICATIONS_POLL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [user, pathname, notificationsRefresh]);
+
+  // Dismiss an open dropdown with Escape or a click outside the header.
+  useEffect(() => {
+    if (!openMenu) {
+      return;
+    }
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (headerRef.current?.contains(event.target as Node)) {
+        return;
       }
-      return next;
-    });
+      setOpenMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenMenu(null);
+      }
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [openMenu]);
+
+  const toggleMenu = (menu: "notifications" | "profile") => {
+    setOpenMenu((current) => (current === menu ? null : menu));
+
+    if (menu === "notifications") {
+      // Pull fresh entries the moment the panel opens.
+      setNotificationsRefresh((current) => current + 1);
+    }
   };
 
-  const handleLogout = async () => {
+  const markAllNotificationsRead = () => {
+    const ids = Array.from(
+      new Set([...readNotificationIds, ...notifications.map((item) => item.id)]),
+    ).slice(-50);
+
+    setReadNotificationIds(ids);
+    setOpenMenu(null);
+
     try {
-      await apiLogout();
+      window.localStorage.setItem(NOTIFICATIONS_READ_KEY, JSON.stringify(ids));
     } catch {
-      // Token may already be invalid; proceed to clear locally regardless.
+      // Storage may be unavailable (private mode); the badge just returns later.
     }
+  };
+
+  const handleSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!user) {
+      return;
+    }
+
+    const term = searchTerm.trim();
+    if (!term) {
+      return;
+    }
+
+    setDrawerOpen(false);
+    router.push(`${roleSearchPath[user.role]}?q=${encodeURIComponent(term)}`);
+  };
+
+  const handleLogout = () => {
+    // Optimistic sign-out: revoke the token in the background and leave at once
+    // so the user never waits on the network.
+    setLoggingOut(true);
     clearSession();
-    router.push("/portal");
+    apiLogout().catch(() => undefined);
+    router.replace("/portal");
   };
 
   if (!user) {
@@ -212,60 +477,199 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const userName = `${user.first_name} ${user.last_name}`.trim();
   const initials = `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`;
 
+  const isGroupActive = (group: SidebarGroup) =>
+    group.children.some(
+      (child) =>
+        pathname === child.href || pathname.startsWith(`${child.href}/`),
+    );
+
+  const unreadCount = notifications.filter(
+    (item) => !readNotificationIds.includes(item.id),
+  ).length;
+
   return (
     <div className={styles.pageShell}>
-      <header className={styles.header}>
-        <button
-          type="button"
-          className={styles.menuButton}
-          onClick={() => setDrawerOpen((open) => !open)}
-          aria-label={drawerOpen ? "Close navigation" : "Open navigation"}
-          aria-expanded={drawerOpen}
-        >
-          <Icon name={drawerOpen ? "close" : "menu"} />
-        </button>
-        <div className={styles.brandWrap}>
-          <Image
-            src="/assets/banner-white.png?v=2"
-            alt="Struktura"
-            width={180}
-            height={50}
-            className={styles.logo}
-            unoptimized
-            priority
-          />
+      <header className={styles.header} ref={headerRef}>
+        <div className={styles.headerLeft}>
+          <button
+            type="button"
+            className={styles.menuButton}
+            onClick={() => setDrawerOpen((open) => !open)}
+            aria-label={drawerOpen ? "Close navigation" : "Open navigation"}
+            aria-expanded={drawerOpen}
+          >
+            <Icon name={drawerOpen ? "close" : "menu"} />
+          </button>
+
+          <div className={styles.brandWrap}>
+            <Image
+              src="/assets/banner-white.png?v=2"
+              alt="Struktura"
+              width={180}
+              height={50}
+              className={styles.logo}
+              unoptimized
+              priority
+            />
+          </div>
+
+          <form
+            className={styles.searchForm}
+            role="search"
+            onSubmit={handleSearch}
+          >
+            <Icon name="search" className={styles.searchIcon} />
+            <input
+              type="search"
+              className={styles.searchInput}
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search..."
+              aria-label="Search the workspace"
+            />
+          </form>
         </div>
 
         <div className={styles.headerRight}>
-          <button
-            type="button"
-            className={styles.notificationButton}
-            aria-label="Notifications"
-          >
-            <Icon name="bell" />
-            <span className={styles.notificationDot} />
-          </button>
-          <div className={styles.userBadge}>
-            <Link
-              href="/portal/dashboard/profile"
-              className={styles.avatarLink}
-              aria-label={`View profile for ${userName || user.user_id}`}
+          <div className={styles.menuAnchor}>
+            <button
+              type="button"
+              className={styles.iconButton}
+              onClick={() => toggleMenu("notifications")}
+              aria-label={
+                unreadCount > 0
+                  ? `Notifications (${unreadCount} new)`
+                  : "Notifications"
+              }
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "notifications"}
+            >
+              <Icon name="bell" />
+              {unreadCount > 0 ? (
+                <span className={styles.notificationDot} />
+              ) : null}
+            </button>
+
+            {openMenu === "notifications" ? (
+              <div
+                className={`${styles.dropdown} ${styles.notificationPanel}`}
+                role="menu"
+                aria-label="Notifications"
+              >
+                <div className={styles.dropdownHead}>
+                  <span>Notifications</span>
+                  <span className={styles.dropdownCount}>
+                    {unreadCount > 0 ? `${unreadCount} new` : "Up to date"}
+                  </span>
+                </div>
+
+                {notificationsError ? (
+                  <p className={styles.notificationEmpty}>
+                    Could not load notifications.
+                  </p>
+                ) : notifications.length === 0 ? (
+                  <p className={styles.notificationEmpty}>
+                    You&apos;re all caught up!
+                  </p>
+                ) : (
+                  <ul className={styles.notificationList}>
+                    {notifications.map((item) => (
+                      <li
+                        key={item.id}
+                        className={
+                          readNotificationIds.includes(item.id)
+                            ? undefined
+                            : styles.notificationUnread
+                        }
+                      >
+                        <span className={styles.notificationIcon}>
+                          <Icon name="spark" />
+                        </span>
+                        <div>
+                          <strong>{notificationTitle(item)}</strong>
+                          <p>{notificationDetail(item)}</p>
+                          <small>{timeAgo(item.created_at)}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <button
+                  type="button"
+                  className={styles.dropdownFooter}
+                  onClick={markAllNotificationsRead}
+                  disabled={unreadCount === 0}
+                >
+                  {unreadCount > 0 ? "Mark all as read" : "All caught up"}
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className={styles.menuAnchor}>
+            <button
+              type="button"
+              className={styles.profileTrigger}
+              onClick={() => toggleMenu("profile")}
+              aria-label="Account menu"
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "profile"}
             >
               <span className={styles.avatar}>{initials}</span>
-            </Link>
-            <span className={styles.userText}>
-              <strong>{userName || user.user_id}</strong>
-              <small>{roleLabels[user.role]}</small>
-            </span>
-            <Icon name="chevron" className={styles.chevron} />
+              <span className={styles.userText}>
+                <strong>{userName || user.user_id}</strong>
+                <small>{roleLabels[user.role]}</small>
+              </span>
+              <Icon name="chevron" className={styles.chevron} />
+            </button>
+
+            {openMenu === "profile" ? (
+              <div
+                className={`${styles.dropdown} ${styles.profilePanel}`}
+                role="menu"
+                aria-label="Account"
+              >
+                <div className={styles.profileHead}>
+                  <span className={styles.avatarLarge}>{initials}</span>
+                  <div>
+                    <strong>{userName || user.user_id}</strong>
+                    <small>{user.email}</small>
+                    <small className={styles.profileMeta}>
+                      {roleLabels[user.role]} &middot; {user.user_id}
+                    </small>
+                  </div>
+                </div>
+                <div className={styles.dropdownDivider} />
+                <Link
+                  href="/portal/dashboard/profile"
+                  className={styles.dropdownItem}
+                  role="menuitem"
+                >
+                  <Icon name="user" />
+                  <span>My Profile</span>
+                </Link>
+                <Link
+                  href="/portal/dashboard/settings"
+                  className={styles.dropdownItem}
+                  role="menuitem"
+                >
+                  <Icon name="settings" />
+                  <span>Settings</span>
+                </Link>
+                <div className={styles.dropdownDivider} />
+                <button
+                  type="button"
+                  className={`${styles.dropdownItem} ${styles.dropdownDanger}`}
+                  role="menuitem"
+                  onClick={handleLogout}
+                >
+                  <Icon name="logout" />
+                  <span>Logout</span>
+                </button>
+              </div>
+            ) : null}
           </div>
-          <button
-            type="button"
-            className={styles.logoutButton}
-            onClick={handleLogout}
-          >
-            Log out
-          </button>
         </div>
       </header>
 
@@ -276,28 +680,48 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           {sidebarData.map((section) => (
             <section className={styles.navSectionGroup} key={section.label}>
               <p className={styles.navSection}>{section.label}</p>
-              {section.items.map((item) =>
-                item.type === "link" ? (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setDrawerOpen(false)}
-                    className={
-                      pathname === item.href
-                        ? `${styles.navItem} ${styles.navItemActive}`
-                        : styles.navItem
-                    }
-                  >
-                    <Icon name={item.icon} className={styles.navIcon} />
-                    <span>{item.label}</span>
-                  </Link>
-                ) : (
+              {section.items.map((item) => {
+                if (item.type === "link") {
+                  const isActive = pathname === item.href;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setDrawerOpen(false)}
+                      className={
+                        isActive
+                          ? `${styles.navItem} ${styles.navItemActive}`
+                          : styles.navItem
+                      }
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <Icon name={item.icon} className={styles.navIcon} />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                }
+
+                const expanded = openGroup === item.id;
+                const groupActive = isGroupActive(item);
+
+                return (
                   <div className={styles.navGroup} key={item.id}>
                     <button
                       type="button"
-                      className={`${styles.navItem} ${styles.groupToggle}`}
-                      onClick={() => toggleGroup(item.id)}
-                      aria-expanded={expandedGroups.has(item.id)}
+                      className={`${styles.navItem} ${styles.groupToggle}${
+                        groupActive ? ` ${styles.groupToggleActive}` : ""
+                      }`}
+                      onClick={() =>
+                        setGroupOverride((current) => ({
+                          id:
+                            current?.id === item.id && current.path === pathname
+                              ? null
+                              : item.id,
+                          path: pathname,
+                        }))
+                      }
+                      aria-expanded={expanded}
                       aria-controls={`sidebar-group-${item.id}`}
                     >
                       <Icon name={item.icon} className={styles.navIcon} />
@@ -305,40 +729,47 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                       <Icon
                         name="chevron"
                         className={
-                          expandedGroups.has(item.id)
+                          expanded
                             ? `${styles.groupChevron} ${styles.groupChevronOpen}`
                             : styles.groupChevron
                         }
                       />
                     </button>
-                    {expandedGroups.has(item.id) ? (
+
+                    {expanded ? (
                       <div
                         className={styles.navChildren}
                         id={`sidebar-group-${item.id}`}
                       >
-                        {item.children.map((child) => (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            onClick={() => setDrawerOpen(false)}
-                            className={
-                              pathname === child.href
-                                ? `${styles.navChild} ${styles.navChildActive}`
-                                : styles.navChild
-                            }
-                          >
-                            {child.label}
-                          </Link>
-                        ))}
+                        {item.children.map((child) => {
+                          const childActive = pathname === child.href;
+
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              onClick={() => setDrawerOpen(false)}
+                              className={
+                                childActive
+                                  ? `${styles.navChild} ${styles.navChildActive}`
+                                  : styles.navChild
+                              }
+                              aria-current={childActive ? "page" : undefined}
+                            >
+                              {child.label}
+                            </Link>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </div>
-                ),
-              )}
+                );
+              })}
             </section>
           ))}
         </nav>
       </aside>
+
       {drawerOpen ? (
         <button
           type="button"
@@ -349,6 +780,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       ) : null}
 
       <main className={styles.mainContent}>{children}</main>
+
+      {loggingOut ? (
+        <div className={styles.logoutOverlay} role="status" aria-live="assertive">
+          <div className={styles.logoutCard}>
+            <span className={styles.logoutSpinner} aria-hidden="true" />
+            <p className={styles.logoutText}>Logging you out...</p>
+            <p className={styles.logoutHint}>Ending your session safely.</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
+
+
+

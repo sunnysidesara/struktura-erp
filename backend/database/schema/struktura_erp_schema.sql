@@ -2,7 +2,7 @@
 --  Struktura ERP - Construction Resource & Cost Management System
 --  Database : Aiven Cloud MySQL   (target database: `defaultdb`)
 --  Source   : Struktura_ERP_Final_Data_Dictionary.docx  (team's finalized ERD)
---  Build    : 17 tables * InnoDB * utf8mb4 / utf8mb4_unicode_ci
+--  Build    : 18 tables * InnoDB * utf8mb4 / utf8mb4_unicode_ci
 --
 --  HOW TO RUN
 --    VS Code -> SQLTools -> connect "Aiven-Cloud-DB" -> open this file -> Run
@@ -24,7 +24,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- -----------------------------------------------------------------------------
 --  Drop (child -> parent) so this script is safe to re-run
 -- -----------------------------------------------------------------------------
-DROP TABLE IF EXISTS `audit_logs`;
+DROP TABLE IF EXISTS site_task;
+DROP TABLE IF EXISTS udit_logs;
 DROP TABLE IF EXISTS `materials_suppliers`;
 DROP TABLE IF EXISTS `material_usage`;
 DROP TABLE IF EXISTS `materials`;
@@ -99,8 +100,11 @@ CREATE TABLE `projects` (
   `project_name`     VARCHAR(255) NOT NULL,
   `client_id`        BIGINT UNSIGNED NULL COMMENT 'Client reference - no client table in the ERD (logical reference only, no FK)',
   `user_id`          BIGINT UNSIGNED NOT NULL COMMENT 'FK -> users.user_id. The user accountable for this project',
+  `site_supervisor_id` BIGINT UNSIGNED NULL COMMENT 'FK -> users.user_id. The Site Supervisor assigned to this site',
   `client_name`      VARCHAR(255) NULL COMMENT 'Client name stored directly on the project',
   `location`         VARCHAR(255) NULL COMMENT 'Site address / location',
+  `latitude`         DECIMAL(10,7) NULL COMMENT 'Site latitude for the map view',
+  `longitude`        DECIMAL(10,7) NULL COMMENT 'Site longitude for the map view',
   `start_date`       DATE         NULL COMMENT 'Project start date',
   `end_date`         DATE         NULL COMMENT 'Project end date',
   `approved_budget`  DECIMAL(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Budget ceiling approved for the project',
@@ -114,10 +118,13 @@ CREATE TABLE `projects` (
   PRIMARY KEY (`project_id`),
   KEY `idx_projects_client_id` (`client_id`),
   KEY `idx_projects_user_id` (`user_id`),
+  KEY `idx_projects_site_supervisor_id` (`site_supervisor_id`),
   KEY `idx_projects_created_by` (`created_by`),
   KEY `idx_projects_updated_by` (`updated_by`),
   CONSTRAINT `fk_projects_user` FOREIGN KEY (`user_id`)
     REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT `fk_projects_site_supervisor` FOREIGN KEY (`site_supervisor_id`)
+    REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT `fk_projects_created_by` FOREIGN KEY (`created_by`)
     REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT `fk_projects_updated_by` FOREIGN KEY (`updated_by`)
@@ -131,6 +138,7 @@ CREATE TABLE `project_phases` (
   `project_name`  VARCHAR(255) NULL COMMENT 'Duplicates projects.project_name in the ERD - likely the phase''s own name',
   `description`   VARCHAR(255) NULL COMMENT 'Description of the phase',
   `sequence_no`   INT UNSIGNED NULL COMMENT 'Order of this phase within the project',
+  `required_skill_id` BIGINT UNSIGNED NULL COMMENT 'FK -> skill.skill_id. Skill required for this phase',
   `project_cost`  DECIMAL(15,2) NULL COMMENT 'Cost associated with this phase',
   `planned_start` DATE         NULL COMMENT 'Planned start date',
   `planned_end`   DATE         NULL COMMENT 'Planned end date',
@@ -265,6 +273,36 @@ CREATE TABLE `labor_hour_log` (
     REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Scheduled on-site work items shown on the supervisor's schedule.
+CREATE TABLE `site_task` (
+  `task_id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `project_id`          BIGINT UNSIGNED NOT NULL COMMENT 'FK -> projects.project_id',
+  `phase_id`            BIGINT UNSIGNED NULL COMMENT 'FK -> project_phases.phase_id',
+  `title`               VARCHAR(255) NOT NULL COMMENT 'Short task description',
+  `task_date`           DATE NOT NULL COMMENT 'Day the task is scheduled',
+  `start_time`          TIME NULL COMMENT 'Planned start time',
+  `assigned_laborer_id` BIGINT UNSIGNED NULL COMMENT 'FK -> laborer.laborer_id',
+  `status`              ENUM('Pending','In Progress','Done') NOT NULL DEFAULT 'Pending',
+  `created_by`          BIGINT UNSIGNED NULL COMMENT 'FK -> users.user_id',
+  `created_at`          TIMESTAMP NULL DEFAULT NULL COMMENT 'Record creation timestamp',
+  `updated_by`          BIGINT UNSIGNED NULL COMMENT 'FK -> users.user_id',
+  `updated_at`          TIMESTAMP NULL DEFAULT NULL COMMENT 'Last modification timestamp',
+  PRIMARY KEY (`task_id`),
+  KEY `idx_site_task_project_date` (`project_id`, `task_date`),
+  KEY `idx_site_task_phase_id` (`phase_id`),
+  KEY `idx_site_task_assigned_laborer_id` (`assigned_laborer_id`),
+  CONSTRAINT `fk_site_task_project` FOREIGN KEY (`project_id`)
+    REFERENCES `projects` (`project_id`) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT `fk_site_task_phase` FOREIGN KEY (`phase_id`)
+    REFERENCES `project_phases` (`phase_id`) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT `fk_site_task_laborer` FOREIGN KEY (`assigned_laborer_id`)
+    REFERENCES `laborer` (`laborer_id`) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT `fk_site_task_created_by` FOREIGN KEY (`created_by`)
+    REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT `fk_site_task_updated_by` FOREIGN KEY (`updated_by`)
+    REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ===========================================================================
 --  4. EQUIPMENT
 -- ===========================================================================
@@ -326,6 +364,7 @@ CREATE TABLE `materials` (
   `material_name`  VARCHAR(255) NOT NULL COMMENT 'Name of the material',
   `unit_of_measure` VARCHAR(50) NULL COMMENT 'e.g. bags, kg, m3',
   `unit_cost`      DECIMAL(15,2) NULL COMMENT 'Reference cost per unit',
+  `stock_quantity` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Current stock on hand',
   `created_by`     BIGINT UNSIGNED NULL COMMENT 'FK -> users.user_id',
   `created_at`     TIMESTAMP    NULL DEFAULT NULL COMMENT 'Record creation timestamp',
   `updated_by`     BIGINT UNSIGNED NULL COMMENT 'FK -> users.user_id',
@@ -423,6 +462,10 @@ CREATE TABLE `audit_logs` (
 --  DONE - re-enable foreign keys, seed roles, and verify
 -- ===========================================================================
 
+ALTER TABLE `project_phases`
+  ADD CONSTRAINT `fk_project_phases_required_skill` FOREIGN KEY (`required_skill_id`)
+  REFERENCES `skill` (`skill_id`) ON UPDATE CASCADE ON DELETE SET NULL;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Seed the fixed set of system roles (Admin / Project Manager / Site Supervisor).
@@ -431,7 +474,7 @@ INSERT INTO `role` (`role_name`, `description`) VALUES
   ('Project Manager', 'Owns construction projects, defines phases and budgets, and manages equipment and material master records.'),
   ('Site Supervisor', 'Records daily labor, material, and equipment usage for assigned projects only.');
 
--- Verification - expect 17 tables.
+-- Verification - expect 18 tables.
 SHOW TABLES;
 
 

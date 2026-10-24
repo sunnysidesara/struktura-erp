@@ -9,6 +9,8 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
@@ -36,8 +38,20 @@ class UserController extends Controller
             $query->where('is_active', $request->boolean('is_active'));
         }
 
+        // Most recent successful sign-in per account (Overview "Last Login").
+        $lastLogins = DB::table('login_history')
+            ->select('user_id', DB::raw('MAX(created_at) as last_login_at'))
+            ->where('status', 'success')
+            ->whereNotNull('user_id')
+            ->groupBy('user_id')
+            ->pluck('last_login_at', 'user_id');
+
         return response()->json([
-            'data' => $query->orderBy('user_id')->get()->map(fn (User $u) => $this->payload($u)),
+            'data' => $query->orderBy('user_id')->get()->map(fn (User $u) => $this->payload($u) + [
+                'last_login_at' => isset($lastLogins[$u->user_id])
+                    ? Carbon::parse($lastLogins[$u->user_id])->toIso8601String()
+                    : null,
+            ]),
         ]);
     }
 
@@ -57,6 +71,7 @@ class UserController extends Controller
             'first_name' => $data['first_name'],
             'last_name' => $data['last_name'],
             'email' => $data['email'],
+            'contact_number' => $data['contact_number'] ?? null,
             // Cast 'hashed' on the model hashes this automatically.
             'password_hash' => $data['password'],
             'is_active' => $data['is_active'] ?? true,
@@ -150,6 +165,7 @@ class UserController extends Controller
             'last_name' => $user->last_name,
             'full_name' => $user->full_name,
             'email' => $user->email,
+            'contact_number' => $user->contact_number,
             'is_active' => $user->is_active,
             'role_id' => $user->role_id,
             'role_name' => $user->role?->role_name,

@@ -1,0 +1,100 @@
+.backdrop {
+  position: fixed;
+  z-index: 160;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgb(10 20 64 / 58%);
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  max-height: calc(100dvh - 2.5rem);
+  border-radius: 14px;
+  background: #f8fafc;
+  box-shadow: 0 30px 70px rgb(4 10 32 / 45%);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  background: linear-gradient(120deg, #0a1440 0%, #14245c 100%);
+  color: #ffffff;
+}
+
+.kicker {
+  margin: 0 0 0.35rem;
+  color: #ca8a04;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.meta {
+  margin: 0.35rem 0 0;
+  color: #c7d2fe;
+  font-size: 0.76rem;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 8px;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.close:hover {
+  border-color: #ca8a04;
+  color: #ca8a04;
+}
+
+.close svg {
+  width: 15px;
+  height: 15px;
+}
+
+.body {
+  padding: 1.25rem 1.5rem 1.5rem;
+  overflow-y: auto;
+}
+
+.body :global(.tabs) {
+  margin-top: 0;
+}
+
+@media (max-width: 640px) {
+  .backdrop {
+    padding: 0.5rem;
+  }
+
+  .head {
+    padding: 1rem;
+  }
+
+  .body {
+    padding: 1rem;
+  }
+}

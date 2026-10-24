@@ -1,0 +1,147 @@
+.siteBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid #dbeafe;
+  border-left: 4px solid #ca8a04;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.siteBarText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.siteBarLabel {
+  color: #a16207;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.siteBarName {
+  color: #0a1440;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.siteBarMeta {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.siteSelectWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.siteSelectLabel {
+  color: #475569;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.siteSelect {
+  min-width: 230px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #d1d9e6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0a1440;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.siteSelect:focus {
+  outline: none;
+  border-color: #ca8a04;
+  box-shadow: 0 0 0 3px rgb(202 138 4 / 15%);
+}
+
+@media (max-width: 640px) {
+  .siteSelectWrap {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .siteSelect {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ---- palette-only notices ---- */
+.notice {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.8rem;
+}
+
+.noticeError {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #a16207;
+  font-size: 0.8rem;
+}
+
+.muted {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.86rem;
+}
+
+/* ---- "select a site first" gate ---- */
+.gate {
+  margin: 2rem auto;
+  max-width: 620px;
+  padding: 2rem 2.2rem;
+  border: 1px solid #dbeafe;
+  border-left: 4px solid #ca8a04;
+  border-radius: 12px;
+  background: linear-gradient(120deg, #f8fbff 0%, #ffffff 60%);
+  text-align: center;
+}
+
+.gateKicker {
+  margin: 0;
+  color: #a16207;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.gateTitle {
+  margin: 0.5rem 0 0;
+  color: #0a1440;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.gateText {
+  margin: 0.6rem 0 0;
+  color: #475569;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}

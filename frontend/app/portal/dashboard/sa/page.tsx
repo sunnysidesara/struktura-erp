@@ -1,479 +1,187 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import {
+  getAdminDashboard,
   listUsers,
   roleCodeFromName,
+  type ApiDashboardData,
   type ApiUserRow,
-  type RoleCode,
 } from "@/lib/api";
+import {
+  MetricCard,
+  MetricGrid,
+  SaPage,
+  SaPanel,
+  SaTable,
+  StatusBadge,
+  formatDate,
+  type SaColumn,
+} from "@/app/portal/dashboard/sa/_components/SaPage";
 import styles from "./page.module.css";
 
-type UserInfo = {
-  user_id: string;
-  first_name: string;
-  last_name: string;
-  role: string;
+const ROLE_LABELS: Record<string, string> = {
+  Admin: "System Administrator",
+  "Project Manager": "Project Manager",
+  "Site Supervisor": "Site Supervisor",
 };
 
-type UserRow = {
-  userId: string;
-  fullName: string;
-  role: "System Administrator" | "Project Manager" | "Site Supervisor";
-  roleCode: RoleCode;
-  status: "Active" | "Inactive";
-  lastLogin: string;
-};
-
-const ROLE_LABELS: Record<
-  RoleCode,
-  "System Administrator" | "Project Manager" | "Site Supervisor"
-> = {
-  SA: "System Administrator",
-  PM: "Project Manager",
-  SS: "Site Supervisor",
-};
-
-type AuditEntry = {
-  time: string;
-  message: string;
-};
-
-// User rows are loaded from the backend (GET /api/v1/users) inside the component.
-
-const roleCards = [
-  {
-    title: "SYSTEM ADMINISTRATOR (SA)",
-    description: "Can: manage users, roles, all projects, system data",
-    users: 2,
-    action: "Edit Permissions",
-  },
-  {
-    title: "PROJECT MANAGER (PM)",
-    description: "Can: manage projects, workforce, budgets, materials",
-    users: 4,
-    action: "Edit Permissions",
-  },
-  {
-    title: "SITE SUPERVISOR (SS)",
-    description: "Can: record daily labor, materials, equipment",
-    users: 6,
-    action: "Edit Permissions",
-  },
-];
-
-const projects = [
-  {
-    name: "Bridge Phase 2",
-    manager: "PM101",
-    progress: 72,
-    budget: "₱ 2,400,000",
-    status: "On Track",
-  },
-  {
-    name: "North Tower Residences",
-    manager: "PM102",
-    progress: 46,
-    budget: "₱ 1,850,000",
-    status: "Delayed",
-  },
-  {
-    name: "Harbor Logistics Hub",
-    manager: "PM103",
-    progress: 88,
-    budget: "₱ 3,100,000",
-    status: "On Track",
-  },
-  {
-    name: "Roadway Rehabilitation",
-    manager: "PM101",
-    progress: 100,
-    budget: "₱ 1,200,000",
-    status: "Completed",
-  },
-  {
-    name: "Campus Utility Upgrade",
-    manager: "PM103",
-    progress: 60,
-    budget: "₱ 980,000",
-    status: "On Track",
-  },
-];
-
-const systemActivity: AuditEntry[] = [
-  { time: "2026-10-04 14:32", message: "SA101 created user SS107" },
-  {
-    time: "2026-10-04 13:15",
-    message: 'PM101 created project "Bridge Phase 2"',
-  },
-  { time: "2026-10-04 11:48", message: "SS103 submitted daily record" },
-  { time: "2026-10-04 10:22", message: "PM103 updated resource allocation" },
-  { time: "2026-10-04 09:17", message: "SA102 changed role permissions" },
-  { time: "2026-10-04 08:49", message: "SS102 completed safety checklist" },
-  { time: "2026-10-04 08:05", message: "PM101 approved material request" },
-  { time: "2026-10-04 07:40", message: "SA101 synced user access table" },
-];
+type UserRowView = ApiUserRow & { roleLabel: string; roleCode: string };
 
 export default function SystemAdminDashboard() {
-  const [user, setUser] = useState<UserInfo | null>(null);
-  const [userRows, setUserRows] = useState<UserRow[]>([]);
+  const [dashboard, setDashboard] = useState<ApiDashboardData | null>(null);
+  const [users, setUsers] = useState<ApiUserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"all" | RoleCode>("all");
-  const [usersLoading, setUsersLoading] = useState(true);
-  const [usersError, setUsersError] = useState("");
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem("struktura_user");
-
-    if (storedUser) {
-      setUser(JSON.parse(storedUser) as UserInfo);
-    }
-  }, []);
+  const [roleFilter, setRoleFilter] = useState("all");
 
   useEffect(() => {
     let active = true;
 
-    listUsers()
-      .then((records: ApiUserRow[]) => {
+    Promise.all([getAdminDashboard(), listUsers()])
+      .then(([dash, userList]) => {
         if (!active) return;
-
-        setUserRows(
-          records.map((record): UserRow => {
-            const code = roleCodeFromName(record.role_name) ?? "SA";
-
-            return {
-              userId: record.id_number,
-              fullName: record.full_name,
-              role: ROLE_LABELS[code],
-              roleCode: code,
-              status: record.is_active ? "Active" : "Inactive",
-              // The schema has no login-timestamp column.
-              lastLogin: "-",
-            };
-          }),
-        );
+        setDashboard(dash);
+        setUsers(userList);
+        setError("");
       })
-      .catch((error) => {
-        if (!active) return;
-        setUsersError(
-          error instanceof Error ? error.message : "Failed to load users.",
-        );
+      .catch((err) => {
+        if (active) setError(err instanceof Error ? err.message : "Failed to load dashboard.");
       })
       .finally(() => {
-        if (!active) return;
-        setUsersLoading(false);
+        if (active) setLoading(false);
       });
 
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
-  const filteredRows = userRows.filter((row) => {
-    const term = search.trim().toLowerCase();
-    const matchesSearch =
-      !term ||
-      row.fullName.toLowerCase().includes(term) ||
-      row.userId.toLowerCase().includes(term);
-    const matchesRole = roleFilter === "all" || row.roleCode === roleFilter;
+  const metrics = dashboard?.metrics;
+  const roles = dashboard?.roles ?? {};
+  const activity = dashboard?.activity ?? [];
+  const recent = dashboard?.recent ?? [];
+  const maxActivity = Math.max(1, ...activity.map((item) => item.total));
+  const totalRoleUsers = Object.values(roles).reduce((sum, value) => sum + value, 0) || 1;
 
+  const rows = useMemo<UserRowView[]>(
+    () => users.map((user) => ({
+      ...user,
+      roleLabel: ROLE_LABELS[user.role_name ?? ""] ?? (user.role_name ?? "-"),
+      roleCode: roleCodeFromName(user.role_name) ?? "SA",
+    })),
+    [users],
+  );
+
+  const filtered = rows.filter((row) => {
+    const term = search.trim().toLowerCase();
+    const matchesSearch = !term || row.full_name.toLowerCase().includes(term) || row.id_number.toLowerCase().includes(term);
+    const matchesRole = roleFilter === "all" || row.roleCode === roleFilter;
     return matchesSearch && matchesRole;
   });
 
+  const columns: SaColumn<UserRowView>[] = [
+    { key: "id", label: "User ID", render: (row) => row.id_number },
+    { key: "name", label: "Full Name", render: (row) => row.full_name },
+    { key: "role", label: "Role", render: (row) => row.roleLabel },
+    { key: "status", label: "Status", status: true, render: (row) => <StatusBadge status={row.is_active ? "Active" : "Inactive"} /> },
+    { key: "last", label: "Last Login", render: (row) => row.last_login_at ? formatDate(row.last_login_at) : "Never" },
+  ];
+
   return (
-    <div className={styles.page}>
-      <div className={styles.shell}>
-        <header className={styles.heroRow}>
-          <div>
-            <p className={styles.kicker}>Management Console</p>
-            <h1 className={styles.title}>System Overview</h1>
-            <p className={styles.subtitle}>Full administrative control</p>
-          </div>
-          <button type="button" className={styles.primaryButton}>
-            + Create User
-          </button>
-        </header>
+    <SaPage
+      kicker="Management Console"
+      title="System Overview"
+      subtitle="Full administrative control"
+      actions={<Link className={styles.primaryButton} href="/portal/dashboard/sa/users?create=1">+ Create User</Link>}
+    >
+      {error ? <p className={styles.alert}>{error}</p> : null}
 
-        <section className={styles.metricGrid} id="overview">
-          <article className={styles.metricCard}>
-            <span className={styles.metricLabel}>Total Users</span>
-            <strong className={styles.metricValue}>128</strong>
-            <small className={styles.metricNote}>+2 this week</small>
-          </article>
-          <article className={styles.metricCard}>
-            <span className={styles.metricLabel}>Active Sessions</span>
-            <strong className={styles.metricValue}>24</strong>
-            <small className={styles.metricNote}>+4 since yesterday</small>
-          </article>
-          <article className={styles.metricCard}>
-            <span className={styles.metricLabel}>Skills Defined</span>
-            <strong className={styles.metricValue}>36</strong>
-            <small className={styles.metricNote}>+3 this month</small>
-          </article>
-          <article className={styles.metricCard}>
-            <span className={styles.metricLabel}>Audit Events Today</span>
-            <strong className={styles.metricValue}>246</strong>
-            <small className={styles.metricNote}>+18% from yesterday</small>
-          </article>
-        </section>
+      <MetricGrid>
+        <MetricCard label="Total Users" value={loading ? "..." : metrics?.total_users ?? 0} note={`${metrics?.active_users ?? 0} active`} />
+        <MetricCard label="Active Sessions" value={loading ? "..." : metrics?.active_sessions ?? 0} note="Issued API tokens" />
+        <MetricCard label="Skills Defined" value={loading ? "..." : metrics?.skills ?? 0} note="Trade catalog" />
+        <MetricCard label="Audit Events Today" value={loading ? "..." : metrics?.audit_events_today ?? 0} note="Changes recorded today" />
+      </MetricGrid>
 
-        <section className={styles.analyticsGrid} id="analytics">
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <span>User Activity (Last 30 Days)</span>
-            </div>
-            <div
-              className={styles.activityChart}
-              role="img"
-              aria-label="Mock user activity over the last 30 days"
-            >
-              {[
-                34, 46, 39, 58, 49, 65, 53, 72, 60, 78, 68, 88, 74, 94, 82, 100,
-                87, 76, 91, 69, 84, 73, 96, 81, 89, 70, 98, 83, 92, 100,
-              ].map((height, index) => (
-                <span key={index} style={{ height: `${height}%` }} />
-              ))}
-            </div>
-            <div className={styles.chartAxis}>
-              <span>Sep 5</span>
-              <span>Sep 15</span>
-              <span>Oct 4</span>
-            </div>
-          </article>
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <span>Roles Distribution</span>
-            </div>
-            <div className={styles.roleChartRow}>
-              <div
-                className={styles.roleDistribution}
-                role="img"
-                aria-label="Roles distribution: 16 percent administrators, 34 percent project managers, 50 percent site supervisors"
-              >
-                <strong>
-                  128 <small>USERS</small>
-                </strong>
-                <div className={styles.distributionBar}>
-                  <span className={styles.legendSa} style={{ width: "16%" }} />
-                  <span className={styles.legendPm} style={{ width: "34%" }} />
-                  <span className={styles.legendSs} style={{ width: "50%" }} />
+      <section className={styles.analyticsGrid}>
+        <article className={styles.panel}>
+          <div className={styles.panelHeader}><span>User Activity (Last 30 Days)</span></div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "0.35rem", height: "180px", padding: "1rem 1.5rem 0" }}>
+            {activity.length === 0 ? (
+              <span style={{ color: "#64748b" }}>No activity recorded.</span>
+            ) : (
+              activity.map((day, index) => (
+                <div key={day.day} title={`${day.day}: ${day.total}`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%" }}>
+                  <span style={{ display: "block", height: `${Math.max(6, (day.total / maxActivity) * 100)}%`, background: index % 3 === 0 ? "#ca8a04" : "#1e3a8a", borderRadius: "4px 4px 0 0" }} />
                 </div>
+              ))
+            )}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "0.5rem 1.5rem 1rem", color: "#64748b", fontSize: "0.7rem" }}>
+            <span>{activity[0]?.day ?? ""}</span>
+            <span>{activity[activity.length - 1]?.day ?? ""}</span>
+          </div>
+        </article>
+
+        <article className={styles.panel}>
+          <div className={styles.panelHeader}><span>Roles Distribution</span></div>
+          <div className={styles.roleChartRow}>
+            <div className={styles.roleDistribution}>
+              <strong>{metrics?.total_users ?? 0}</strong>
+              <small>USERS</small>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className={styles.distributionBar} style={{ display: "flex", height: "10px", borderRadius: "999px", overflow: "hidden", background: "#e2e8f0" }}>
+                <span style={{ width: `${((roles.Admin ?? 0) / totalRoleUsers) * 100}%`, background: "#1e3a8a" }} />
+                <span style={{ width: `${((roles["Project Manager"] ?? 0) / totalRoleUsers) * 100}%`, background: "#ca8a04" }} />
+                <span style={{ width: `${((roles["Site Supervisor"] ?? 0) / totalRoleUsers) * 100}%`, background: "#334155" }} />
               </div>
               <ul className={styles.chartLegend}>
-                <li>
-                  <i className={styles.legendSa} /> System Admin{" "}
-                  <strong>16%</strong>
-                </li>
-                <li>
-                  <i className={styles.legendPm} /> Project Manager{" "}
-                  <strong>34%</strong>
-                </li>
-                <li>
-                  <i className={styles.legendSs} /> Site Supervisor{" "}
-                  <strong>50%</strong>
-                </li>
+                <li><i className={styles.legendSa} /> System Admin <strong>{roles.Admin ?? 0}</strong></li>
+                <li><i className={styles.legendPm} /> Project Manager <strong>{roles["Project Manager"] ?? 0}</strong></li>
+                <li><i className={styles.legendSs} /> Site Supervisor <strong>{roles["Site Supervisor"] ?? 0}</strong></li>
               </ul>
             </div>
-          </article>
-        </section>
+          </div>
+        </article>
+      </section>
 
-        <section className={styles.panel} id="user-management">
-          <div className={styles.panelHeader}>
-            <span>User Management</span>
-            <div className={styles.filterRow}>
-              <input
-                type="text"
-                placeholder="Search user"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-              <select
-                value={roleFilter}
-                onChange={(event) =>
-                  setRoleFilter(event.target.value as "all" | RoleCode)
-                }
-              >
-                <option value="all">All Roles</option>
-                <option value="SA">System Administrator</option>
-                <option value="PM">Project Manager</option>
-                <option value="SS">Site Supervisor</option>
-              </select>
-            </div>
-          </div>
-
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>User ID</th>
-                  <th>Full Name</th>
-                  <th>Role</th>
-                  <th className={styles.statusColumn}>Status</th>
-                  <th>Last Login</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-                            <tbody>
-                {usersLoading ? (
-                  <tr>
-                    <td colSpan={6}>Loading users...</td>
-                  </tr>
-                ) : usersError ? (
-                  <tr>
-                    <td colSpan={6}>{usersError}</td>
-                  </tr>
-                ) : filteredRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={6}>No users found.</td>
-                  </tr>
-                ) : (
-                  filteredRows.map((entry) => (
-                    <tr key={entry.userId}>
-                      <td>{entry.userId}</td>
-                      <td>{entry.fullName}</td>
-                      <td>{entry.role}</td>
-                      <td className={styles.statusColumn}>
-                        <span
-                          className={
-                            entry.status === "Active"
-                              ? styles.statusActive
-                              : styles.statusInactive
-                          }
-                        >
-                          {entry.status}
-                        </span>
-                      </td>
-                      <td>{entry.lastLogin}</td>
-                      <td>
-                        <div className={styles.actionCell}>
-                          <button type="button" className={styles.linkButton}>
-                            Edit
-                          </button>
-                          <button type="button" className={styles.linkButtonAlt}>
-                            Reset
-                          </button>
-                          <button type="button" className={styles.linkButton}>
-                            Disable
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className={styles.panel} id="roles">
-          <div className={styles.panelHeader}>
-            <span>Roles & Permissions</span>
-          </div>
-          <div className={styles.roleGrid}>
-            {roleCards.map((role) => (
-              <article className={styles.roleCard} key={role.title}>
-                <h3>{role.title}</h3>
-                <p>{role.description}</p>
-                <div className={styles.roleMeta}>
-                  <span>Users: {role.users}</span>
-                </div>
-                <button type="button" className={styles.roleAction}>
-                  {role.action}
-                </button>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className={styles.panel} id="all-projects">
-          <div className={styles.panelHeader}>
-            <span>All Projects</span>
-          </div>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Project Name</th>
-                  <th>Manager</th>
-                  <th>Progress</th>
-                  <th>Budget</th>
-                  <th className={styles.statusColumn}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((project) => (
-                  <tr key={project.name}>
-                    <td>{project.name}</td>
-                    <td>{project.manager}</td>
-                    <td>
-                      <div className={styles.progressWrap}>
-                        <span className={styles.progressTrack} />
-                        <span
-                          className={styles.progressFill}
-                          style={{ width: `${project.progress}%` }}
-                        />
-                      </div>
-                      <small>{project.progress}%</small>
-                    </td>
-                    <td>{project.budget}</td>
-                    <td className={styles.statusColumn}>
-                      <span
-                        className={
-                          project.status === "On Track"
-                            ? styles.statusActive
-                            : project.status === "Delayed"
-                              ? styles.statusWarning
-                              : styles.statusCompleted
-                        }
-                      >
-                        {project.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className={styles.bottomGrid}>
-          <article className={styles.panel} id="audit-logs">
-            <div className={styles.panelHeader}>
-              <span>Recent Audit Logs</span>
-            </div>
-            <ul className={styles.activityList}>
-              {systemActivity.slice(0, 6).map((entry) => (
-                <li key={`${entry.time}-${entry.message}`}>
-                  <span className={styles.activityTime}>[{entry.time}]</span>
-                  <span>{entry.message}</span>
+      <section className={styles.bottomGrid}>
+        <article className={styles.panel}>
+          <div className={styles.panelHeader}><span>Recent System Activity</span></div>
+          <ul className={styles.activityList}>
+            {recent.length === 0 ? (
+              <li>No recent activity.</li>
+            ) : (
+              recent.map((item) => (
+                <li key={item.id}>
+                  <span className={styles.activityTime}>{formatDate(item.charge_at)}</span>
+                  <span>{item.action_type} on {item.table_name} #{item.record_id}{item.project_name ? ` (${item.project_name})` : ""}</span>
                 </li>
-              ))}
-            </ul>
-          </article>
-          <article className={styles.panel} id="database-performance">
-            <div className={styles.panelHeader}>
-              <span>Database Performance</span>
-            </div>
-            <div className={styles.performanceGrid}>
-              <div>
-                <span>Query Time</span>
-                <strong>42 ms</strong>
-                <small>−8 ms this week</small>
-              </div>
-              <div>
-                <span>Active Connections</span>
-                <strong>18 / 50</strong>
-                <small>Within capacity</small>
-              </div>
-              <div>
-                <span>Cache Hit</span>
-                <strong>98.4%</strong>
-                <small>+1.2% this week</small>
-              </div>
-            </div>
-          </article>
-        </section>
-      </div>
-    </div>
+              ))
+            )}
+          </ul>
+        </article>
+      </section>
+
+      <SaPanel
+        title="User Management"
+        filters={<>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." />
+          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
+            <option value="all">All Roles</option>
+            <option value="SA">System Administrator</option>
+            <option value="PM">Project Manager</option>
+            <option value="SS">Site Supervisor</option>
+          </select>
+        </>}
+      >
+        <SaTable columns={columns} rows={filtered} loading={loading} error={error} rowKey={(row) => row.user_id} />
+        <div style={{ padding: "0 1.5rem 1.5rem" }}>
+          <Link className={styles.linkButton} href="/portal/dashboard/sa/users">View all users</Link>
+        </div>
+      </SaPanel>
+    </SaPage>
   );
 }

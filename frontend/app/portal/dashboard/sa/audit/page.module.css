@@ -1,0 +1,124 @@
+/* ---- tables ---- */
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th,
+.table td {
+  padding: 0.85rem 0.7rem;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.table th {
+  background: #f8fafc;
+  color: #0a1440;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.center {
+  text-align: center;
+}
+
+.expandButton {
+  border: 1px solid #1e3a8a;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #1e3a8a;
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.expandButton:hover {
+  background: #eff6ff;
+}
+
+.emptyCell {
+  padding: 1.75rem 0.7rem;
+  color: #6b7280;
+  font-size: 0.82rem;
+  text-align: center;
+  white-space: normal;
+}
+
+/* ---- expanded details ---- */
+
+.detailRowCell {
+  padding: 0.2rem 0.7rem 1.1rem;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: normal;
+}
+
+.detailMeta {
+  display: block;
+  margin-bottom: 0.6rem;
+  color: #6b7280;
+  font-size: 0.72rem;
+}
+
+.detailEmpty {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.78rem;
+}
+
+.diffTable {
+  width: 100%;
+  max-width: 720px;
+  border-collapse: collapse;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.diffTable th,
+.diffTable td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #eef2f7;
+  color: #334155;
+  font-size: 0.74rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.diffTable th {
+  background: #f8fafc;
+  color: #0a1440;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.diffTable tr:last-child td {
+  border-bottom: 0;
+}
+
+.fieldName {
+  color: #0a1440;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.changedRowCell {
+  background: #eff6ff;
+}

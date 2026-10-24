@@ -5,7 +5,7 @@
                 "authProtocol": "default",
                 "enableSsl": "Enabled",
                 "ssl": {
-                    "ca": "C:\\Users\\CHAN\\Downloads\\ca.pem"
+                    "ca": "C:\\Users\\user\\Downloads\\FULLSTACK\\backend\\storage\\ca.pem"
                 }
             },
             "ssh": "Disabled",

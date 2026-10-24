@@ -936,3 +936,73 @@
     width: 100%;
   }
 }
+
+/* ---- palette-only notices (navy / gold) ---- */
+.notice {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.82rem;
+}
+
+.noticeError {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  background: #fffbeb;
+  color: #a16207;
+  font-size: 0.82rem;
+}
+
+/* ---- finance summary block (Budgets tab) ---- */
+.summaryBlock {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.35rem 1.5rem;
+  border: 1px solid #dbeafe;
+  border-left: 4px solid #ca8a04;
+  border-radius: 10px;
+  background: linear-gradient(120deg, #f8fbff 0%, #ffffff 70%);
+}
+
+.summaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.summaryLabel {
+  color: #a16207;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.summaryValue {
+  color: #0a1440;
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.summaryDivider {
+  width: 1px;
+  align-self: stretch;
+  background: #e2e8f0;
+}
+
+@media (max-width: 640px) {
+  .summaryDivider {
+    display: none;
+  }
+}
+

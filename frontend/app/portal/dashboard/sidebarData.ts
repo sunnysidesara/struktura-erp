@@ -1,3 +1,6 @@
+// Sidebar navigation data. Search and account links live in the dashboard header,
+// so each role only lists its workspace sections here.
+//
 // Add a link to a section's items, or add a group with a unique id and child routes.
 // Add a role by defining its sections below and including it in getSidebarData's role union.
 
@@ -63,45 +66,26 @@ const saSidebar: SidebarSection[] = [
         href: "/portal/dashboard/sa",
       },
       {
-        type: "link",
-        icon: "search",
-        label: "Search",
-        href: "/portal/dashboard/sa/search",
-      },
-      {
         type: "group",
         icon: "users",
         label: "Users",
         id: "users",
         children: [
-          { label: "All Users", href: "/portal/dashboard/sa/users" },
-          { label: "Create User", href: "/portal/dashboard/sa/users/create" },
-          { label: "Roles & Access", href: "/portal/dashboard/sa/users/roles" },
+          { label: "Directory", href: "/portal/dashboard/sa/users" },
+          { label: "Roles", href: "/portal/dashboard/sa/users/roles" },
         ],
       },
       {
-        type: "group",
+        type: "link",
         icon: "sparkles",
         label: "Skills",
-        id: "skills",
-        children: [
-          { label: "Skill List", href: "/portal/dashboard/sa/skills" },
-          {
-            label: "Categories",
-            href: "/portal/dashboard/sa/skills/categories",
-          },
-        ],
+        href: "/portal/dashboard/sa/skills",
       },
       {
-        type: "group",
+        type: "link",
         icon: "file-text",
         label: "Audit Logs",
-        id: "audit-logs",
-        children: [
-          { label: "System Events", href: "/portal/dashboard/sa/audit/events" },
-          { label: "Login History", href: "/portal/dashboard/sa/audit/logins" },
-          { label: "DB Performance", href: "/portal/dashboard/sa/audit/db" },
-        ],
+        href: "/portal/dashboard/sa/audit",
       },
     ],
   },
@@ -111,7 +95,7 @@ const saSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "folder",
-        label: "All Projects",
+        label: "Projects",
         href: "/portal/dashboard/sa/projects",
       },
       {
@@ -134,40 +118,6 @@ const saSidebar: SidebarSection[] = [
       },
     ],
   },
-  {
-    label: "SYSTEM",
-    items: [
-      {
-        type: "link",
-        icon: "database",
-        label: "Database",
-        href: "/portal/dashboard/sa/database",
-      },
-      {
-        type: "link",
-        icon: "settings",
-        label: "System Configuration",
-        href: "/portal/dashboard/sa/settings",
-      },
-    ],
-  },
-  {
-    label: "MY ACCOUNT",
-    items: [
-      {
-        type: "link",
-        icon: "user",
-        label: "My Profile",
-        href: "/portal/dashboard/profile",
-      },
-      {
-        type: "link",
-        icon: "settings",
-        label: "Settings",
-        href: "/portal/dashboard/settings",
-      },
-    ],
-  },
 ];
 
 const pmSidebar: SidebarSection[] = [
@@ -182,54 +132,21 @@ const pmSidebar: SidebarSection[] = [
       },
       {
         type: "link",
-        icon: "search",
-        label: "Search",
-        href: "/portal/dashboard/pm/search",
-      },
-      {
-        type: "group",
         icon: "folder",
-        label: "My Projects",
-        id: "my-projects",
-        children: [
-          { label: "Active", href: "/portal/dashboard/pm/projects/active" },
-          {
-            label: "Completed",
-            href: "/portal/dashboard/pm/projects/completed",
-          },
-          { label: "All Projects", href: "/portal/dashboard/pm/projects" },
-        ],
+        label: "Projects",
+        href: "/portal/dashboard/pm/projects",
       },
       {
-        type: "group",
+        type: "link",
         icon: "list",
-        label: "Project Phases",
-        id: "phases",
-        children: [
-          { label: "Define Phase", href: "/portal/dashboard/pm/phases/define" },
-          { label: "Timelines", href: "/portal/dashboard/pm/phases/timelines" },
-          { label: "All Phases", href: "/portal/dashboard/pm/phases" },
-        ],
+        label: "Phases",
+        href: "/portal/dashboard/pm/phases",
       },
       {
-        type: "group",
+        type: "link",
         icon: "user-check",
         label: "Workforce",
-        id: "workforce",
-        children: [
-          {
-            label: "Available",
-            href: "/portal/dashboard/pm/workforce/available",
-          },
-          {
-            label: "Assigned",
-            href: "/portal/dashboard/pm/workforce/assigned",
-          },
-          {
-            label: "Skill Match",
-            href: "/portal/dashboard/pm/workforce/skill-match",
-          },
-        ],
+        href: "/portal/dashboard/pm/workforce",
       },
     ],
   },
@@ -262,37 +179,8 @@ const pmSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "dollar-sign",
-        label: "Budgets",
-        href: "/portal/dashboard/pm/budgets",
-      },
-      {
-        type: "link",
-        icon: "bar-chart",
-        label: "Cost Reports",
-        href: "/portal/dashboard/pm/cost-reports",
-      },
-      {
-        type: "link",
-        icon: "wallet",
-        label: "Remaining Balance",
-        href: "/portal/dashboard/pm/balance",
-      },
-    ],
-  },
-  {
-    label: "MY ACCOUNT",
-    items: [
-      {
-        type: "link",
-        icon: "user",
-        label: "My Profile",
-        href: "/portal/dashboard/profile",
-      },
-      {
-        type: "link",
-        icon: "settings",
-        label: "Settings",
-        href: "/portal/dashboard/settings",
+        label: "Finance",
+        href: "/portal/dashboard/pm/finance",
       },
     ],
   },
@@ -310,31 +198,15 @@ const ssSidebar: SidebarSection[] = [
       },
       {
         type: "link",
-        icon: "search",
-        label: "Search",
-        href: "/portal/dashboard/ss/search",
-      },
-      {
-        type: "group",
         icon: "map-pin",
         label: "My Site",
-        id: "my-site",
-        children: [
-          { label: "Overview", href: "/portal/dashboard/ss/site" },
-          { label: "Site Info", href: "/portal/dashboard/ss/site/info" },
-          { label: "Map", href: "/portal/dashboard/ss/site/map" },
-        ],
+        href: "/portal/dashboard/ss/site",
       },
       {
-        type: "group",
+        type: "link",
         icon: "calendar",
         label: "Schedule",
-        id: "schedule",
-        children: [
-          { label: "Today", href: "/portal/dashboard/ss/schedule/today" },
-          { label: "This Week", href: "/portal/dashboard/ss/schedule/week" },
-          { label: "All Tasks", href: "/portal/dashboard/ss/schedule/all" },
-        ],
+        href: "/portal/dashboard/ss/schedule",
       },
     ],
   },
@@ -344,20 +216,8 @@ const ssSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "clock",
-        label: "Log Labor Hours",
-        href: "/portal/dashboard/ss/log-hours",
-      },
-      {
-        type: "link",
-        icon: "package",
-        label: "Materials Used",
-        href: "/portal/dashboard/ss/materials",
-      },
-      {
-        type: "link",
-        icon: "wrench",
-        label: "Equipment Used",
-        href: "/portal/dashboard/ss/equipment",
+        label: "Logs",
+        href: "/portal/dashboard/ss/logs",
       },
     ],
   },
@@ -367,31 +227,14 @@ const ssSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "users",
-        label: "Worker Roster",
+        label: "Workers",
         href: "/portal/dashboard/ss/workers",
       },
       {
         type: "link",
         icon: "flag",
-        label: "Active Phases",
+        label: "Phases",
         href: "/portal/dashboard/ss/phases",
-      },
-    ],
-  },
-  {
-    label: "MY ACCOUNT",
-    items: [
-      {
-        type: "link",
-        icon: "user",
-        label: "My Profile",
-        href: "/portal/dashboard/profile",
-      },
-      {
-        type: "link",
-        icon: "settings",
-        label: "Settings",
-        href: "/portal/dashboard/settings",
       },
     ],
   },
@@ -409,3 +252,5 @@ export function getSidebarData(role: "SA" | "PM" | "SS"): SidebarSection[] {
       return [];
   }
 }
+
+

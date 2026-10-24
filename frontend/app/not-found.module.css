@@ -1,0 +1,93 @@
+.page {
+  display: flex;
+  min-height: 100dvh;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem;
+  background: #fbfaf6;
+  color: #10182f;
+}
+
+.card {
+  width: min(520px, 100%);
+  border: 1px solid #dcdacb;
+  border-radius: 16px;
+  background: #ffffff;
+  padding: 2.5rem 2rem;
+  text-align: center;
+  box-shadow: 0 24px 48px rgb(11 21 59 / 8%);
+}
+
+.kicker {
+  margin: 0 0 0.75rem;
+  color: #ca8a04;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  color: #0b153b;
+  font-size: 1.65rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.message {
+  margin: 0.9rem auto 0;
+  max-width: 380px;
+  color: #697087;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem;
+  margin-top: 1.75rem;
+}
+
+.primaryLink,
+.secondaryLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  border-radius: 2px;
+  padding: 0.7rem 1.2rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.primaryLink {
+  border: 1px solid #0b153b;
+  background: #0b153b;
+  color: #ffffff;
+}
+
+.primaryLink:hover {
+  border-color: #14214e;
+  background: #14214e;
+}
+
+.secondaryLink {
+  border: 1px solid #dcdacb;
+  background: #ffffff;
+  color: #0b153b;
+}
+
+.secondaryLink:hover {
+  border-color: #0b153b;
+  background: #f5f2e9;
+}
