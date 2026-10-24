@@ -20,10 +20,8 @@ import {
   type PmCatalogEquipment,
   type PmCatalogMaterial,
   type PmPhase,
-  type PmProject,
 } from "@/lib/api";
 import { FormModal, ModalField, ModalGrid } from "../_components/FormModal";
-import { DetailModal } from "../_components/DetailModal";
 import styles from "../../sa/page.module.css";
 import pmStyles from "../page.module.css";
 
@@ -31,14 +29,12 @@ type UsageRow = { id: number; name: string; amount: string; date: string; phase:
 type Notice = { type: "success" | "error"; message: string } | null;
 
 /** Materials / Equipment detail popup: usage table + "log new usage" form. */
-export function UsageDetail({
-  project,
+export function UsagePanel({
+  projectId,
   kind,
-  onClose,
 }: {
-  project: PmProject;
+  projectId: number;
   kind: "material" | "equipment";
-  onClose: () => void;
 }) {
   const isMaterial = kind === "material";
   const pageName = isMaterial ? "Materials" : "Equipment";
@@ -65,7 +61,7 @@ export function UsageDetail({
     setLoading(true);
 
     const usage = isMaterial
-      ? listPmMaterialUsage(project.project_id).then((items) =>
+      ? listPmMaterialUsage(projectId).then((items) =>
           items.map((item) => ({
             id: item.usage_id,
             name: item.material,
@@ -75,7 +71,7 @@ export function UsageDetail({
             phaseId: item.phase_id,
           })),
         )
-      : listPmEquipmentUsage(project.project_id).then((items) =>
+      : listPmEquipmentUsage(projectId).then((items) =>
           items.map((item) => ({
             id: item.usage_id,
             name: item.equipment,
@@ -88,7 +84,7 @@ export function UsageDetail({
 
     Promise.all([
       usage,
-      listPmPhases(project.project_id),
+      listPmPhases(projectId),
       isMaterial ? listPmMaterialCatalog() : listPmEquipmentCatalog(),
     ])
       .then(([usageRows, phaseList, catalog]) => {
@@ -106,7 +102,7 @@ export function UsageDetail({
         setError(err instanceof Error ? err.message : `Failed to load ${kind} data.`),
       )
       .finally(() => setLoading(false));
-  }, [project.project_id, isMaterial, kind]);
+  }, [projectId, isMaterial, kind]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -240,7 +236,7 @@ export function UsageDetail({
   const selectedMachine = machines.find((item) => String(item.equipment_id) === itemId);
 
   return (
-    <DetailModal open page={pageName} project={project} onClose={onClose}>
+    <>
       {notice ? (
         <p className={notice.type === "error" ? pmStyles.noticeError : pmStyles.notice}>
           {notice.message}
@@ -365,6 +361,6 @@ export function UsageDetail({
         rows={detail?.rows ?? []}
         onClose={() => setDetail(null)}
       />
-    </DetailModal>
+    </>
   );
 }

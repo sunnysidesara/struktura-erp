@@ -1189,15 +1189,52 @@ class PmController extends Controller
 
     public function budgets(Request $request): JsonResponse
     {
+        $ids = $this->projectIds($request);
+
+        // Resource allocations live on the project row; spend is aggregated from
+        // the usage tables so the finance page can show one clean breakdown.
+        $resources = DB::table('projects')
+            ->whereIn('project_id', $ids)
+            ->get(['project_id', 'materials_budget', 'equipment_budget'])
+            ->keyBy('project_id');
+
+        $materialSpend = DB::table('material_usage as mu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'mu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->groupBy('ph.project_id')
+            ->select('ph.project_id', DB::raw('SUM(mu.computed_cost) as spent'))
+            ->pluck('spent', 'project_id');
+
+        $equipmentSpend = DB::table('equipment_usage as eu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'eu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->groupBy('ph.project_id')
+            ->select('ph.project_id', DB::raw('SUM(eu.computed_cost) as spent'))
+            ->pluck('spent', 'project_id');
+
         $data = $this->projectsFor($request)
-            ->map(fn ($project) => [
-                'project_id' => $project['project_id'],
-                'project' => $project['project_name'],
-                'approved' => $project['approved_budget'],
-                'spent' => $project['spent_budget'],
-                'remaining' => $project['remaining_budget'],
-                'utilization' => $project['utilization'],
-            ])
+            ->map(function ($project) use ($resources, $materialSpend, $equipmentSpend) {
+                $resource = $resources[$project['project_id']] ?? null;
+                $materialsBudget = round((float) ($resource->materials_budget ?? 0), 2);
+                $materialsSpent = round((float) ($materialSpend[$project['project_id']] ?? 0), 2);
+                $equipmentBudget = round((float) ($resource->equipment_budget ?? 0), 2);
+                $equipmentSpent = round((float) ($equipmentSpend[$project['project_id']] ?? 0), 2);
+
+                return [
+                    'project_id' => $project['project_id'],
+                    'project' => $project['project_name'],
+                    'approved' => $project['approved_budget'],
+                    'spent' => $project['spent_budget'],
+                    'remaining' => $project['remaining_budget'],
+                    'utilization' => $project['utilization'],
+                    'materials_budget' => $materialsBudget,
+                    'materials_spent' => $materialsSpent,
+                    'materials_remaining' => round($materialsBudget - $materialsSpent, 2),
+                    'equipment_budget' => $equipmentBudget,
+                    'equipment_spent' => $equipmentSpent,
+                    'equipment_remaining' => round($equipmentBudget - $equipmentSpent, 2),
+                ];
+            })
             ->values();
 
         return response()->json(['data' => $data]);

@@ -12,6 +12,7 @@ import {
 import { ProgressBar } from "./_components/SsReport";
 import { selectSsSite, useSsSite } from "./_components/siteSelection";
 import styles from "../sa/page.module.css";
+import ssStyles from "./ss.module.css";
 
 export default function SiteSupervisorOverview() {
   const router = useRouter();
@@ -55,6 +56,17 @@ export default function SiteSupervisorOverview() {
           : "Every site assigned to you with its current progress."
       }
     >
+      <SaPanel title="Welcome">
+        <div className={ssStyles.welcomeBody}>
+          <p className={ssStyles.welcomeHead}>Welcome back to your sites.</p>
+          <p className={ssStyles.welcomeText}>
+            Open one of your assigned sites below, or pick one from &ldquo;My Sites&rdquo; in the
+            header. Once a site is selected, the sidebar unlocks so you can review its details,
+            phases and daily logs.
+          </p>
+        </div>
+      </SaPanel>
+
       <SaPanel title={`My Sites (${sites.length})`}>
         <SaTable
           columns={columns}

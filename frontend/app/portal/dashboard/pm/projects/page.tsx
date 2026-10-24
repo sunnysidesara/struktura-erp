@@ -11,6 +11,7 @@ import {
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { ProjectModal } from "./ProjectModal";
+import { selectPmProject, usePmProject } from "../_components/projectSelection";
 import { RecordDetails, type DetailRow } from "@/app/portal/dashboard/_components/RecordDetails";
 import styles from "../../sa/page.module.css";
 import pmStyles from "../page.module.css";
@@ -18,6 +19,7 @@ import pmStyles from "../page.module.css";
 type Notice = { type: "success" | "error"; message: string } | null;
 
 export default function AllProjectsPage() {
+  const { selectedId } = usePmProject();
   const [projects, setProjects] = useState<PmProject[]>([]);
   const [supervisors, setSupervisors] = useState<PmSupervisor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +146,17 @@ export default function AllProjectsPage() {
           >
             Edit
           </button>
+          {row.project_id === selectedId ? (
+            <span className={pmStyles.selectedBadge}>Selected</span>
+          ) : (
+            <button
+              type="button"
+              className={styles.linkButtonAlt}
+              onClick={() => selectPmProject(row.project_id)}
+            >
+              Select
+            </button>
+          )}
         </div>
       ),
     },

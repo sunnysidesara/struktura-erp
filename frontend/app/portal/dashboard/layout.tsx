@@ -12,7 +12,10 @@ import {
   useState,
 } from "react";
 import styles from "./layout.module.css";
+import { PmProjectSwitcher } from "./pm/_components/PmProjectSwitcher";
+import { usePmProject } from "./pm/_components/projectSelection";
 import { SsSiteSwitcher } from "./ss/_components/SsSiteSwitcher";
+import { useSsSite } from "./ss/_components/siteSelection";
 import {
   getSidebarData,
   type IconName,
@@ -333,6 +336,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     [user],
   );
 
+  // Project scope: the header switcher and the sidebar lock share one store per
+  // role. Passing `enabled` keeps the other role's endpoint from being called.
+  const ssScope = useSsSite(user?.role === "SS");
+  const pmScope = usePmProject(user?.role === "PM");
+  const activeProjectId =
+    user?.role === "SS" ? ssScope.selectedId : user?.role === "PM" ? pmScope.selectedId : null;
+  // Overview stays reachable; every project-scoped page waits for a selection.
+  const navLocked =
+    (user?.role === "PM" || user?.role === "SS") && activeProjectId === null;
+
   // Accordion behaviour: only the section that owns the current route is open.
   // Clicking a group stores an override for this path; navigating resets it.
   const activeGroupId = useMemo(() => {
@@ -517,6 +530,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             /* Supervisors swap sites instead of searching: the switcher drives
                every SS screen. */
             <SsSiteSwitcher />
+          ) : user.role === "PM" ? (
+            /* Managers swap the active project from the same place. */
+            <PmProjectSwitcher />
           ) : (
             <form
               className={styles.searchForm}
@@ -689,6 +705,22 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               {section.items.map((item) => {
                 if (item.type === "link") {
                   const isActive = pathname === item.href;
+                  const isLocked = navLocked && item.href !== rolePath[user.role];
+
+                  if (isLocked) {
+                    return (
+                      <span
+                        key={item.href}
+                        className={`${styles.navItem} ${styles.navItemLocked}`}
+                        aria-disabled="true"
+                        tabIndex={-1}
+                        data-tooltip="Select a project first"
+                      >
+                        <Icon name={item.icon} className={styles.navIcon} />
+                        <span>{item.label}</span>
+                      </span>
+                    );
+                  }
 
                   return (
                     <Link
@@ -710,6 +742,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
                 const expanded = openGroup === item.id;
                 const groupActive = isGroupActive(item);
+
+                if (navLocked) {
+                  return (
+                    <div className={styles.navGroup} key={item.id}>
+                      <span
+                        className={`${styles.navItem} ${styles.navItemLocked}`}
+                        aria-disabled="true"
+                        tabIndex={-1}
+                        data-tooltip="Select a project first"
+                      >
+                        <Icon name={item.icon} className={styles.navIcon} />
+                        <span>{item.label}</span>
+                        <Icon name="chevron" className={styles.groupChevron} />
+                      </span>
+                    </div>
+                  );
+                }
 
                 return (
                   <div className={styles.navGroup} key={item.id}>

@@ -6,7 +6,6 @@ import {
   listPmPhases,
   type PmAssignment,
   type PmPhase,
-  type PmProject,
 } from "@/lib/api";
 import {
   SaPanel,
@@ -15,18 +14,11 @@ import {
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { RecordDetails, type DetailRow } from "@/app/portal/dashboard/_components/RecordDetails";
-import { DetailModal } from "../_components/DetailModal";
 import styles from "../../sa/page.module.css";
 import pmStyles from "../page.module.css";
 
 /** View-only assignment list for one project, filterable by phase. */
-export function AssignmentsDetail({
-  project,
-  onClose,
-}: {
-  project: PmProject;
-  onClose: () => void;
-}) {
+export function AssignmentsPanel({ projectId }: { projectId: number }) {
   const [rows, setRows] = useState<PmAssignment[]>([]);
   const [phases, setPhases] = useState<PmPhase[]>([]);
   const [phaseFilter, setPhaseFilter] = useState("all");
@@ -39,7 +31,7 @@ export function AssignmentsDetail({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
 
-    Promise.all([listPmAssignments(project.project_id), listPmPhases(project.project_id)])
+    Promise.all([listPmAssignments(projectId), listPmPhases(projectId)])
       .then(([assignmentList, phaseList]) => {
         if (!active) return;
         setRows(assignmentList);
@@ -56,7 +48,7 @@ export function AssignmentsDetail({
     return () => {
       active = false;
     };
-  }, [project.project_id]);
+  }, [projectId]);
 
   const visible = useMemo(
     () =>
@@ -106,7 +98,7 @@ export function AssignmentsDetail({
   ];
 
   return (
-    <DetailModal open page="Assignments" project={project} onClose={onClose}>
+    <>
       <SaPanel
         title={`Assigned workers (${visible.length})`}
         filters={
@@ -148,6 +140,6 @@ export function AssignmentsDetail({
         rows={detail?.rows ?? []}
         onClose={() => setDetail(null)}
       />
-    </DetailModal>
+    </>
   );
 }

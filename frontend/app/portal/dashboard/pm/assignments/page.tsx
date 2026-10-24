@@ -1,26 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import type { PmProject } from "@/lib/api";
-import { ProjectMaster } from "../_components/ProjectMaster";
-import { AssignmentsDetail } from "./AssignmentsDetail";
+import { SaPage } from "@/app/portal/dashboard/sa/_components/SaPage";
+import { PmProjectGate } from "../_components/PmProjectGate";
+import { usePmProject } from "../_components/projectSelection";
+import { AssignmentsPanel } from "./AssignmentsDetail";
 
 export default function AssignmentsPage() {
-  const [openProject, setOpenProject] = useState<PmProject | null>(null);
+  const { selected } = usePmProject();
 
   return (
-    <>
-      <ProjectMaster
-        kicker="Operations"
-        title="Assignments"
-        subtitle="Choose a project to review its worker assignments by phase"
-        actionLabel="View Assignments"
-        onOpen={setOpenProject}
-      />
-
-      {openProject ? (
-        <AssignmentsDetail project={openProject} onClose={() => setOpenProject(null)} />
-      ) : null}
-    </>
+    <SaPage
+      kicker="Operations"
+      title="Assignments"
+      subtitle={
+        selected
+          ? `${selected.code} · ${selected.project_name}`
+          : "Select a project to review its worker assignments."
+      }
+    >
+      <PmProjectGate>{(projectId) => <AssignmentsPanel projectId={projectId} />}</PmProjectGate>
+    </SaPage>
   );
 }

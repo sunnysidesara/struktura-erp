@@ -133,7 +133,7 @@ const pmSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "folder",
-        label: "Projects",
+        label: "Project",
         href: "/portal/dashboard/pm/projects",
       },
       {
@@ -144,15 +144,16 @@ const pmSidebar: SidebarSection[] = [
       },
       {
         type: "link",
+        icon: "dollar-sign",
+        label: "Finance",
+        href: "/portal/dashboard/pm/finance",
+      },
+      {
+        type: "link",
         icon: "check-square",
         label: "Assignments",
         href: "/portal/dashboard/pm/assignments",
       },
-    ],
-  },
-  {
-    label: "RESOURCES",
-    items: [
       {
         type: "link",
         icon: "package",
@@ -164,17 +165,6 @@ const pmSidebar: SidebarSection[] = [
         icon: "wrench",
         label: "Equipment",
         href: "/portal/dashboard/pm/equipment",
-      },
-    ],
-  },
-  {
-    label: "FINANCE",
-    items: [
-      {
-        type: "link",
-        icon: "dollar-sign",
-        label: "Finance",
-        href: "/portal/dashboard/pm/finance",
       },
     ],
   },

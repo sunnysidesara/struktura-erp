@@ -12,6 +12,8 @@ import {
   saveSession,
   toSessionUser,
 } from "@/lib/api";
+import { resetPmSelection } from "@/app/portal/dashboard/pm/_components/projectSelection";
+import { resetSsSelection } from "@/app/portal/dashboard/ss/_components/siteSelection";
 
 export default function PortalPage() {
   const router = useRouter();
@@ -48,6 +50,11 @@ export default function PortalPage() {
         setLoading(false);
         return;
       }
+
+      // Every sign-in starts with no project selected: the sidebar stays
+      // locked until the user picks one from Overview or the header switcher.
+      resetPmSelection();
+      resetSsSelection();
 
       saveSession(token, sessionUser);
       router.push(ROLE_DASHBOARD_PATHS[sessionUser.role]);

@@ -18,7 +18,6 @@ import {
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { RecordDetails, type DetailRow } from "@/app/portal/dashboard/_components/RecordDetails";
-import { DetailModal } from "../_components/DetailModal";
 import { PhaseModal } from "./PhaseModal";
 import styles from "../../sa/page.module.css";
 import pmStyles from "../page.module.css";
@@ -31,7 +30,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "timeline", label: "Timeline" },
 ];
 
-export function PhasesDetail({ project, onClose }: { project: PmProject; onClose: () => void }) {
+export function PhasesPanel({ project }: { project: PmProject }) {
   const [tab, setTab] = useState<TabId>("list");
   const [phases, setPhases] = useState<PmPhase[]>([]);
   const [skills, setSkills] = useState<ApiSkill[]>([]);
@@ -147,7 +146,7 @@ export function PhasesDetail({ project, onClose }: { project: PmProject; onClose
   ];
 
   return (
-    <DetailModal open page="Phases" project={project} onClose={onClose}>
+    <>
       <Tabs items={TABS} active={tab} onChange={setTab} label="Phase views" />
 
       {notice ? (
@@ -203,7 +202,7 @@ export function PhasesDetail({ project, onClose }: { project: PmProject; onClose
         rows={detail?.rows ?? []}
         onClose={() => setDetail(null)}
       />
-    </DetailModal>
+    </>
   );
 }
 
