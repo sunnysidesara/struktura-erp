@@ -1,24 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import type { SsSiteOption } from "@/lib/api";
-import { SiteMaster } from "../_components/SiteMaster";
+import { SaPage } from "@/app/portal/dashboard/sa/_components/SaPage";
+import { SsSiteGate } from "../_components/SsSiteGate";
+import { useSsSite } from "../_components/siteSelection";
 import { PhasesDetail } from "./PhasesDetail";
 
-export default function ActivePhasesPage() {
-  const [openSite, setOpenSite] = useState<SsSiteOption | null>(null);
+export default function PhasesPage() {
+  const { selected } = useSsSite();
 
   return (
-    <>
-      <SiteMaster
-        kicker="Site Supervisor"
-        title="Phases"
-        subtitle="Choose a site to view its phases"
-        actionLabel="View Phases"
-        onOpen={setOpenSite}
-      />
-
-      {openSite ? <PhasesDetail site={openSite} onClose={() => setOpenSite(null)} /> : null}
-    </>
+    <SaPage
+      kicker="Site Supervisor"
+      title="Phases"
+      subtitle={
+        selected
+          ? `${selected.code} · ${selected.project}`
+          : "Phases for the site selected in My Sites."
+      }
+    >
+      <SsSiteGate>{() => <PhasesDetail />}</SsSiteGate>
+    </SaPage>
   );
 }

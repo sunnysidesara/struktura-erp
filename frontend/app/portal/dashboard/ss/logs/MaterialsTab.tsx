@@ -12,6 +12,7 @@ import {
   SaPanel,
   SaTable,
   StatusBadge,
+  money,
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import {
@@ -209,6 +210,25 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
 
   return (
     <>
+      <KpiStrip
+        items={[
+          {
+            label: "Total Materials Allocation",
+            value: money(data?.metrics.materials_allocation ?? 0),
+          },
+          {
+            label: "Total Materials Expenses",
+            value: money(data?.metrics.materials_spent ?? 0),
+            tone: "negative",
+          },
+          {
+            label: "Remaining Materials Budget",
+            value: money(data?.metrics.materials_remaining ?? 0),
+            tone: (data?.metrics.materials_remaining ?? 0) < 0 ? "negative" : "positive",
+          },
+        ]}
+      />
+
       <SaPanel title={editingId ? `Correct material entry ${editingId}` : "New material usage"}>
         {notice ? (
           <p className={notice.type === "error" ? ssStyles.noticeError : ssStyles.notice}>
@@ -295,15 +315,6 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
           </FormShell>
         )}
       </SaPanel>
-
-      <KpiStrip
-        items={[
-          { label: "Entries Today", value: String(data?.metrics.entries_today ?? 0) },
-          { label: "Distinct Materials", value: String(data?.metrics.distinct_today ?? 0) },
-          { label: "Catalog Items", value: String(materials.length) },
-          { label: "Total Logs", value: String(data?.metrics.total_logs ?? 0) },
-        ]}
-      />
 
       <SaPanel title="Recent material usage">
         <SaTable

@@ -23,6 +23,8 @@ class ProjectPhase extends Model
         'planned_start',
         'planned_end',
         'status',
+        'completion_requested_at',
+        'completion_requested_by',
         'created_by',
         'updated_by',
     ];
@@ -36,6 +38,7 @@ class ProjectPhase extends Model
             'planned_start' => 'date',
             'planned_end' => 'date',
             'project_cost' => 'decimal:2',
+            'completion_requested_at' => 'datetime',
         ];
     }
 }

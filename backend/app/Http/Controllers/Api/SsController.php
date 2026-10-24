@@ -8,6 +8,7 @@ use App\Models\LaborHourLog;
 use App\Models\Material;
 use App\Models\MaterialUsage;
 use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -183,11 +184,16 @@ class SsController extends Controller
                 'p.end_date',
                 'p.deadline',
                 'p.status',
+                'p.approved_budget',
+                'p.materials_budget',
+                'p.equipment_budget',
                 'sup.id_number as supervisor_number',
                 'sup.first_name as supervisor_first',
                 'sup.last_name as supervisor_last',
+                'sup.email as supervisor_email',
                 'pm.first_name as manager_first',
-                'pm.last_name as manager_last'
+                'pm.last_name as manager_last',
+                'pm.email as manager_email'
             )
             ->first();
     }
@@ -209,7 +215,123 @@ class SsController extends Controller
     }
 
     /**
-     * Site banner payload used by every SS screen.
+     * Materials / equipment / labor spend recorded against the given projects.
+     *
+     * @param  array<int, int>  $ids
+     * @return array{materials: float, equipment: float, labor: float}
+     */
+    private function projectSpend(array $ids): array
+    {
+        if (empty($ids)) {
+            return ['materials' => 0.0, 'equipment' => 0.0, 'labor' => 0.0];
+        }
+
+        $materials = (float) DB::table('material_usage as mu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'mu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->sum('mu.computed_cost');
+
+        $equipment = (float) DB::table('equipment_usage as eu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'eu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->sum('eu.computed_cost');
+
+        $labor = (float) DB::table('labor_hour_log as lhl')
+            ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'lhl.assignment_id')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->sum('lhl.computed_cost');
+
+        return [
+            'materials' => round($materials, 2),
+            'equipment' => round($equipment, 2),
+            'labor' => round($labor, 2),
+        ];
+    }
+
+    /**
+     * Materials / equipment budget provisioned for the given projects.
+     *
+     * @param  array<int, int>  $ids
+     * @return array{materials: float, equipment: float, total: float}
+     */
+    private function resourceBudget(array $ids): array
+    {
+        if (empty($ids)) {
+            return ['materials' => 0.0, 'equipment' => 0.0, 'total' => 0.0];
+        }
+
+        $row = DB::table('projects')
+            ->whereIn('project_id', $ids)
+            ->selectRaw('SUM(materials_budget) as materials, SUM(equipment_budget) as equipment, SUM(approved_budget) as total')
+            ->first();
+
+        return [
+            'materials' => round((float) ($row->materials ?? 0), 2),
+            'equipment' => round((float) ($row->equipment ?? 0), 2),
+            'total' => round((float) ($row->total ?? 0), 2),
+        ];
+    }
+
+    /**
+     * Overall progress per project (average of its phase progress).
+     *
+     * @param  array<int, int>  $ids
+     * @return array<int, int>
+     */
+    private function projectProgress(array $ids): array
+    {
+        $buckets = [];
+
+        foreach ($this->phasesPayload($ids) as $phase) {
+            $buckets[$phase['project_id']][] = $phase['progress'];
+        }
+
+        $progress = [];
+
+        foreach ($buckets as $projectId => $values) {
+            $progress[$projectId] = count($values) > 0
+                ? (int) round(array_sum($values) / count($values))
+                : 0;
+        }
+
+        return $progress;
+    }
+
+    /**
+     * Factual description of the project built from its own record + phases.
+     *
+     * @param  array<int, array<string, mixed>>  $phases
+     */
+    private function describeProject(object $project, array $phases): string
+    {
+        $parts = [];
+
+        if ($project->client_name) {
+            $parts[] = 'Client: '.$project->client_name.'.';
+        }
+
+        if ($project->location) {
+            $parts[] = 'Site located at '.$project->location.'.';
+        }
+
+        if ($phases !== []) {
+            $names = array_slice(array_column($phases, 'name'), 0, 3);
+            $parts[] = 'Scope covers '.count($phases).' phases: '.implode(', ', $names)
+                .(count($phases) > count($names) ? ' and more' : '').'.';
+        }
+
+        if ($project->start_date && $project->end_date) {
+            $parts[] = 'Scheduled from '.$project->start_date.' to '.$project->end_date.'.';
+        } elseif ($project->end_date) {
+            $parts[] = 'Target completion '.$project->end_date.'.';
+        }
+
+        return implode(' ', $parts);
+    }
+
+    /**
+     * Site banner + financial summary used by every SS screen.
      */
     private function sitePayload(array $ids): ?array
     {
@@ -219,20 +341,42 @@ class SsController extends Controller
             return null;
         }
 
+        $projectId = (int) $project->project_id;
+        $phases = $this->phasesPayload([$projectId]);
+        $spend = $this->projectSpend([$projectId]);
+        $approved = (float) $project->approved_budget;
+        $materialsBudget = (float) $project->materials_budget;
+        $equipmentBudget = (float) $project->equipment_budget;
+
         return [
-            'project_id' => (int) $project->project_id,
+            'project_id' => $projectId,
             'code' => 'PRJ-'.str_pad((string) $project->project_id, 4, '0', STR_PAD_LEFT),
             'project' => $project->project_name,
+            'description' => $this->describeProject($project, $phases),
             'location' => $project->location,
             'client' => $project->client_name,
             'supervisor' => trim(($project->supervisor_first ?? '').' '.($project->supervisor_last ?? '')),
             'supervisor_id' => $project->supervisor_number,
+            'supervisorEmail' => $project->supervisor_email,
             'manager' => trim(($project->manager_first ?? '').' '.($project->manager_last ?? '')),
+            'managerEmail' => $project->manager_email,
             'status' => $project->status,
             'startDate' => $project->start_date,
             'endDate' => $project->end_date ?? $project->deadline,
             'deadline' => $project->deadline,
             'currentPhase' => $this->currentPhase($ids),
+            'budgets' => [
+                'total' => round($approved, 2),
+                'materials' => round($materialsBudget, 2),
+                'equipment' => round($equipmentBudget, 2),
+                'labor' => round(max(0.0, $approved - $materialsBudget - $equipmentBudget), 2),
+            ],
+            'spend' => [
+                'materials' => $spend['materials'],
+                'equipment' => $spend['equipment'],
+                'labor' => $spend['labor'],
+                'total' => round($spend['materials'] + $spend['equipment'] + $spend['labor'], 2),
+            ],
             'coordinates' => [
                 'lat' => $project->latitude !== null ? (float) $project->latitude : null,
                 'lng' => $project->longitude !== null ? (float) $project->longitude : null,
@@ -264,6 +408,7 @@ class SsController extends Controller
                 'planned_start',
                 'planned_end',
                 'status',
+                'completion_requested_at',
                 'required_skill_id'
             )
             ->get();
@@ -279,7 +424,15 @@ class SsController extends Controller
             ->get()
             ->keyBy('phase_id');
 
-        return $phases->map(function ($phase) use ($counts) {
+        $workers = DB::table('workforce_assignment as wa')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->where('wa.status', 'Active')
+            ->groupBy('wa.phase_id')
+            ->select('wa.phase_id', DB::raw('COUNT(DISTINCT wa.laborer_id) as workers'))
+            ->pluck('workers', 'phase_id');
+
+        return $phases->map(function ($phase) use ($counts, $workers) {
             $row = $counts->get($phase->phase_id);
             $total = (int) ($row->total ?? 0);
             $done = (int) ($row->done ?? 0);
@@ -301,6 +454,8 @@ class SsController extends Controller
                 'sequence' => (int) ($phase->sequence_no ?? 0),
                 'progress' => $progress,
                 'status' => $phase->status,
+                'completionRequestedAt' => $phase->completion_requested_at,
+                'workers' => (int) ($workers[$phase->phase_id] ?? 0),
                 'plannedStart' => $phase->planned_start,
                 'plannedEnd' => $phase->planned_end,
                 'required_skill_id' => $phase->required_skill_id !== null ? (int) $phase->required_skill_id : null,
@@ -723,6 +878,8 @@ class SsController extends Controller
             return [];
         }
 
+        $progress = $this->projectProgress($ids);
+
         return DB::table('projects')
             ->whereIn('project_id', $ids)
             ->orderBy('project_id')
@@ -733,6 +890,7 @@ class SsController extends Controller
                 'project' => $row->project_name,
                 'location' => $row->location,
                 'status' => $row->status,
+                'progress' => $progress[(int) $row->project_id] ?? 0,
             ])->values()->all();
     }
 
@@ -938,6 +1096,8 @@ class SsController extends Controller
         $today = $this->today()->toDateString();
         $logs = $this->materialLogsPayload($ids);
         $todayLogs = array_filter($logs, fn ($log) => $log['date'] === $today);
+        $budget = $this->resourceBudget($ids);
+        $spend = $this->projectSpend($ids);
 
         return response()->json([
             'server_date' => $today,
@@ -949,6 +1109,9 @@ class SsController extends Controller
                 'entries_today' => count($todayLogs),
                 'distinct_today' => count(array_unique(array_column($todayLogs, 'material'))),
                 'total_logs' => count($logs),
+                'materials_allocation' => $budget['materials'],
+                'materials_spent' => $spend['materials'],
+                'materials_remaining' => round($budget['materials'] - $spend['materials'], 2),
             ],
         ]);
     }
@@ -959,6 +1122,8 @@ class SsController extends Controller
         $today = $this->today()->toDateString();
         $logs = $this->equipmentLogsPayload($ids);
         $todayLogs = array_filter($logs, fn ($log) => $log['date'] === $today);
+        $budget = $this->resourceBudget($ids);
+        $spend = $this->projectSpend($ids);
 
         return response()->json([
             'server_date' => $today,
@@ -971,6 +1136,9 @@ class SsController extends Controller
                 'logs_today' => count($todayLogs),
                 'machines_today' => count(array_unique(array_column($todayLogs, 'equipment'))),
                 'total_logs' => count($logs),
+                'equipment_allocation' => $budget['equipment'],
+                'equipment_spent' => $spend['equipment'],
+                'equipment_remaining' => round($budget['equipment'] - $spend['equipment'], 2),
             ],
         ]);
     }
@@ -1007,6 +1175,45 @@ class SsController extends Controller
             ],
         ]);
     }
+    /**
+     * Supervisor asks the Project Manager to sign a phase off.
+     */
+    public function requestCompletion(Request $request, int $id): JsonResponse
+    {
+        $ids = $this->projectIds($request);
+        $phase = $this->phaseFor($ids, $id);
+
+        if (! $phase) {
+            return response()->json(['message' => 'This phase is not part of your assigned sites.'], 404);
+        }
+
+        if ($phase->status === 'Completed') {
+            return response()->json(['message' => 'This phase is already completed.'], 422);
+        }
+
+        $model = ProjectPhase::query()->find($id);
+
+        if (! $model) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        $model->update([
+            'completion_requested_at' => Carbon::now(),
+            'completion_requested_by' => $request->user()->user_id,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        $name = $phase->project_name ?? $phase->description ?? 'Phase '.$id;
+
+        return response()->json([
+            'message' => 'Completion requested for "'.$name.'". Your Project Manager has been notified.',
+            'data' => [
+                'phase_id' => $id,
+                'completion_requested_at' => $model->completion_requested_at?->toDateTimeString(),
+            ],
+        ]);
+    }
+
     public function search(Request $request): JsonResponse
     {
         $query = trim((string) $request->query('q', ''));

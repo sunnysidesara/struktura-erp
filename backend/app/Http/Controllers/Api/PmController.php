@@ -340,6 +340,7 @@ class PmController extends Controller
                 'ph.planned_start',
                 'ph.planned_end',
                 'ph.status',
+                'ph.completion_requested_at',
                 'ph.required_skill_id',
                 's.skill_name as required_skill'
             )
@@ -357,6 +358,7 @@ class PmController extends Controller
                 'planned_start' => $row->planned_start,
                 'planned_end' => $row->planned_end,
                 'status' => $row->status,
+                'completion_requested_at' => $row->completion_requested_at,
                 'required_skill_id' => $row->required_skill_id,
                 'required_skill' => $row->required_skill,
             ]);

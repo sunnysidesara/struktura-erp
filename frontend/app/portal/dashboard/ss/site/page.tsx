@@ -1,24 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import type { SsSiteOption } from "@/lib/api";
-import { SiteMaster } from "../_components/SiteMaster";
+import { SaPage } from "@/app/portal/dashboard/sa/_components/SaPage";
+import { SsSiteGate } from "../_components/SsSiteGate";
+import { useSsSite } from "../_components/siteSelection";
 import { SiteDetail } from "./SiteDetail";
 
-export default function SsSitePage() {
-  const [openSite, setOpenSite] = useState<SsSiteOption | null>(null);
+export default function CurrentSiteDetailsPage() {
+  const { selected } = useSsSite();
 
   return (
-    <>
-      <SiteMaster
-        kicker="Site Supervisor"
-        title="My Site"
-        subtitle="Choose one of your sites to see its details"
-        actionLabel="View Site"
-        onOpen={setOpenSite}
-      />
-
-      {openSite ? <SiteDetail site={openSite} onClose={() => setOpenSite(null)} /> : null}
-    </>
+    <SaPage
+      kicker="Site Supervisor"
+      title="Current Site Details"
+      subtitle={
+        selected
+          ? `${selected.code} · ${selected.project}`
+          : "Project details for the site selected in My Sites."
+      }
+    >
+      <SsSiteGate>{() => <SiteDetail />}</SsSiteGate>
+    </SaPage>
   );
 }

@@ -12,6 +12,7 @@ import {
   SaPanel,
   SaTable,
   StatusBadge,
+  money,
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import {
@@ -209,6 +210,25 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
 
   return (
     <>
+      <KpiStrip
+        items={[
+          {
+            label: "Total Equipment Allocation",
+            value: money(data?.metrics.equipment_allocation ?? 0),
+          },
+          {
+            label: "Total Equipment Expenses",
+            value: money(data?.metrics.equipment_spent ?? 0),
+            tone: "negative",
+          },
+          {
+            label: "Remaining Equipment Budget",
+            value: money(data?.metrics.equipment_remaining ?? 0),
+            tone: (data?.metrics.equipment_remaining ?? 0) < 0 ? "negative" : "positive",
+          },
+        ]}
+      />
+
       <SaPanel title={editingId ? `Correct equipment entry ${editingId}` : "New equipment usage"}>
         {notice ? (
           <p className={notice.type === "error" ? ssStyles.noticeError : ssStyles.notice}>
@@ -293,15 +313,6 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
           </FormShell>
         )}
       </SaPanel>
-
-      <KpiStrip
-        items={[
-          { label: "Hours Today", value: `${data?.metrics.hours_today ?? 0} h` },
-          { label: "Logs Today", value: String(data?.metrics.logs_today ?? 0) },
-          { label: "Machines Today", value: String(data?.metrics.machines_today ?? 0) },
-          { label: "Total Logs", value: String(data?.metrics.total_logs ?? 0) },
-        ]}
-      />
 
       <SaPanel title="Recent equipment usage">
         <SaTable

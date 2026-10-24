@@ -128,6 +128,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/ss/equipment', [SsController::class, 'storeEquipmentUsage']);
                 Route::put('/ss/equipment/{id}', [SsController::class, 'updateEquipmentUsage']);
                 Route::delete('/ss/equipment/{id}', [SsController::class, 'destroyEquipmentUsage']);
+                Route::post('/ss/phases/{id}/request-completion', [SsController::class, 'requestCompletion']);
             });
         });
     });

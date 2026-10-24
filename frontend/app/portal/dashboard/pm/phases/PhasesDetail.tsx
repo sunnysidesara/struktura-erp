@@ -118,6 +118,10 @@ export function PhasesDetail({ project, onClose }: { project: PmProject; onClose
                   { label: "Planned End", value: row.planned_end ?? "-" },
                   { label: "Phase Budget", value: money(row.project_cost) },
                   { label: "Status", value: row.status ?? "-" },
+              {
+                label: "Completion Request",
+                value: row.completion_requested_at ?? "Not requested",
+              },
                 ],
               })
             }

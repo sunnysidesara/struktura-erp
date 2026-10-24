@@ -193,42 +193,25 @@ const ssSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "map-pin",
-        label: "My Site",
+        label: "Current Site Details",
         href: "/portal/dashboard/ss/site",
-      },
-      {
-        type: "link",
-        icon: "calendar",
-        label: "Schedule",
-        href: "/portal/dashboard/ss/schedule",
-      },
-    ],
-  },
-  {
-    label: "DAILY LOGS",
-    items: [
-      {
-        type: "link",
-        icon: "clock",
-        label: "Logs",
-        href: "/portal/dashboard/ss/logs",
-      },
-    ],
-  },
-  {
-    label: "VIEW ONLY",
-    items: [
-      {
-        type: "link",
-        icon: "users",
-        label: "Workers",
-        href: "/portal/dashboard/ss/workers",
       },
       {
         type: "link",
         icon: "flag",
         label: "Phases",
         href: "/portal/dashboard/ss/phases",
+      },
+      {
+        type: "group",
+        icon: "clock",
+        label: "Logs",
+        id: "ss-logs",
+        children: [
+          { label: "Workers Log", href: "/portal/dashboard/ss/logs/workers" },
+          { label: "Materials Log", href: "/portal/dashboard/ss/logs/materials" },
+          { label: "Equipment Log", href: "/portal/dashboard/ss/logs/equipment" },
+        ],
       },
     ],
   },

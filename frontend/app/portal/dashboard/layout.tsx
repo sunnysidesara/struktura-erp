@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import styles from "./layout.module.css";
+import { SsSiteSwitcher } from "./ss/_components/SsSiteSwitcher";
 import {
   getSidebarData,
   type IconName,
@@ -39,12 +40,11 @@ const roleLabels: Record<UserRole, string> = {
   SS: "Site Supervisor",
 };
 
-// The header search box replaces the old sidebar "Search" link: it always jumps
-// to the search screen that belongs to the signed-in role.
-const roleSearchPath: Record<UserRole, string> = {
+// The header search box jumps to the search screen that belongs to the
+// signed-in role. Site Supervisors have no search box (they use My Sites).
+const roleSearchPath: Record<Exclude<UserRole, "SS">, string> = {
   SA: "/portal/dashboard/sa/search",
   PM: "/portal/dashboard/pm/search",
-  SS: "/portal/dashboard/ss/search",
 };
 
 type UtilityIcon =
@@ -448,7 +448,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!user) {
+    if (!user || user.role === "SS") {
       return;
     }
 
@@ -513,21 +513,27 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             />
           </div>
 
-          <form
-            className={styles.searchForm}
-            role="search"
-            onSubmit={handleSearch}
-          >
-            <Icon name="search" className={styles.searchIcon} />
-            <input
-              type="search"
-              className={styles.searchInput}
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search..."
-              aria-label="Search the workspace"
-            />
-          </form>
+          {user.role === "SS" ? (
+            /* Supervisors swap sites instead of searching: the switcher drives
+               every SS screen. */
+            <SsSiteSwitcher />
+          ) : (
+            <form
+              className={styles.searchForm}
+              role="search"
+              onSubmit={handleSearch}
+            >
+              <Icon name="search" className={styles.searchIcon} />
+              <input
+                type="search"
+                className={styles.searchInput}
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Search..."
+                aria-label="Search the workspace"
+              />
+            </form>
+          )}
         </div>
 
         <div className={styles.headerRight}>

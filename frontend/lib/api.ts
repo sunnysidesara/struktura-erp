@@ -354,7 +354,7 @@ export type PmProject = { project_id: number; code: string; project_name: string
 
 /** Active Site Supervisor a PM can attach to a project. */
 export type PmSupervisor = { user_id: number; id_number: string; name: string };
-export type PmPhase = { phase_id: number; project_id: number; project: string; phase_name: string | null; description: string | null; sequence_no: number | null; project_cost: number; planned_start: string | null; planned_end: string | null; status: string | null; required_skill_id: number | null; required_skill: string | null };
+export type PmPhase = { phase_id: number; project_id: number; project: string; phase_name: string | null; description: string | null; sequence_no: number | null; project_cost: number; planned_start: string | null; planned_end: string | null; status: string | null; completion_requested_at?: string | null; required_skill_id: number | null; required_skill: string | null };
 export type PmLaborer = { laborer_id: number; first_name: string; last_name: string; hourly_rate: string | number; employment_status: string; project?: string; phase?: string; role_on_task?: string | null; status?: string | null; assignment_id?: number };
 export type PmWorkforce = { available: PmLaborer[]; assigned: PmLaborer[]; skills: Record<string, string[]> };
 export type PmMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; supplier_name: string | null; used_quantity?: number };
@@ -526,16 +526,21 @@ export type SsSite = {
   project_id: number;
   code: string;
   project: string;
+  description: string;
   location: string | null;
   client: string | null;
   supervisor: string;
   supervisor_id: string | null;
+  supervisorEmail: string | null;
   manager: string;
+  managerEmail: string | null;
   status: string | null;
   startDate: string | null;
   endDate: string | null;
   deadline: string | null;
   currentPhase: string | null;
+  budgets: { total: number; materials: number; equipment: number; labor: number };
+  spend: { materials: number; equipment: number; labor: number; total: number };
   coordinates: { lat: number | null; lng: number | null };
 };
 
@@ -548,6 +553,8 @@ export type SsPhase = {
   sequence: number;
   progress: number;
   status: string | null;
+  completionRequestedAt: string | null;
+  workers: number;
   plannedStart: string | null;
   plannedEnd: string | null;
   required_skill_id: number | null;
@@ -580,6 +587,7 @@ export type SsSiteOption = {
   project: string;
   location: string | null;
   status: string | null;
+  progress: number;
 };
 
 export type SsTask = {
@@ -723,7 +731,14 @@ export type SsMaterialsResponse = {
   phases: SsPhase[];
   logs: SsMaterialLog[];
   series: SsSeriesPoint[];
-  metrics: { entries_today: number; distinct_today: number; total_logs: number };
+  metrics: {
+    entries_today: number;
+    distinct_today: number;
+    total_logs: number;
+    materials_allocation: number;
+    materials_spent: number;
+    materials_remaining: number;
+  };
 };
 
 export type SsEquipmentResponse = {
@@ -732,7 +747,15 @@ export type SsEquipmentResponse = {
   phases: SsPhase[];
   logs: SsEquipmentLog[];
   series: SsSeriesPoint[];
-  metrics: { hours_today: number; logs_today: number; machines_today: number; total_logs: number };
+  metrics: {
+    hours_today: number;
+    logs_today: number;
+    machines_today: number;
+    total_logs: number;
+    equipment_allocation: number;
+    equipment_spent: number;
+    equipment_remaining: number;
+  };
 };
 
 export type SsWorkersResponse = {
@@ -819,6 +842,9 @@ export const getSsWorkers = (projectId?: number | null) =>
   request<SsWorkersResponse>(`/ss/workers${ssQuery(projectId)}`);
 export const getSsPhases = (projectId?: number | null) =>
   request<SsPhasesResponse>(`/ss/phases${ssQuery(projectId)}`);
+/** Ask the Project Manager to sign a phase off. */
+export const requestSsPhaseCompletion = (phaseId: number) =>
+  request<SsWriteResponse>(`/ss/phases/${phaseId}/request-completion`, { method: "POST" });
 export const getSsSearch = (q: string, projectId?: number | null) =>
   request<SsSearchResponse>(
     `/ss/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${projectId}` : ""}`,
