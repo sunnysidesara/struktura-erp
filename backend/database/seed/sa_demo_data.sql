@@ -122,16 +122,5 @@ INSERT IGNORE INTO material_usage (material_usage_id, material_id, phase_id, usa
 (9,9,9,'2026-09-28',30.00,25500.00,1,NOW(),1,NOW()),
 (10,10,2,'2026-10-03',200.00,11000.00,1,NOW(),1,NOW());
 
-INSERT IGNORE INTO suppliers (supplier_id, supplier_name, contact_name, contact_num, street_address, city, state_province, postal_code, country) VALUES
-(1,'BuildRight Trading','Ana Cruz','0918-200-0001','12 Mabini St','Quezon City','Metro Manila','1100','Philippines'),
-(2,'SteelWorks Philippines','Ben Lim','0918-200-0002','88 Bonifacio Ave','Caloocan City','Metro Manila','1400','Philippines'),
-(3,'CementOne Supply','Cara Diaz','0918-200-0003','5 Ortigas Ave','Pasig City','Metro Manila','1600','Philippines'),
-(4,'Timber and Boards Co.','Dino Reyes','0918-200-0004','22 Marcos Hwy','Antipolo City','Rizal','1870','Philippines'),
-(5,'PaintPro Depot','Elena Santos','0918-200-0005','7 Shaw Blvd','Mandaluyong City','Metro Manila','1550','Philippines'),
-(6,'HeavyParts Trading','Fred Gomez','0918-200-0006','31 Quirino Ave','Paranaque City','Metro Manila','1700','Philippines');
-
-INSERT IGNORE INTO materials_suppliers (material_suppliers_id, material_id, supplier_id) VALUES
-(1,1,1),(2,1,3),(3,2,1),(4,3,1),(5,4,2),(6,5,4),(7,6,1),(8,7,5),(9,8,3),(10,9,1),(11,10,4),(12,4,1);
-
 -- Audit rows are no longer seeded: the AuditObserver writes real entries to
 -- audit_logs whenever User/Skill/Project/ProjectPhase records change.

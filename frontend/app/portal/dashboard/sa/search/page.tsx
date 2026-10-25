@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { searchAll, type ApiSearchResults } from "@/lib/api";
 import { SaPage, SaPanel, SaTable, StatusBadge, Tabs, money, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 import styles from "../page.module.css";
@@ -23,35 +24,51 @@ type SearchTab =
   | "equipment";
 
 export default function SearchPage() {
-  const [term, setTerm] = useState("");
+  return (
+    <Suspense fallback={null}>
+      <SearchResults />
+    </Suspense>
+  );
+}
+
+function SearchResults() {
+  const searchParams = useSearchParams();
+  const query = searchParams.get("q")?.trim() ?? "";
   const [results, setResults] = useState<ApiSearchResults | null>(null);
   const [tab, setTab] = useState<SearchTab>("users");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const runSearch = async (value: string) => {
+  const runSearch = useCallback(async (value: string) => {
     const q = value.trim();
-    if (!q) { setResults(null); setError(""); return; }
+    if (!q) {
+      setResults(null);
+      setError("");
+      return;
+    }
+
     setLoading(true);
     setError("");
-    try { setResults(await searchAll(q)); }
-    catch (err) { setError(err instanceof Error ? err.message : "Search failed."); }
-    finally { setLoading(false); }
-  };
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void runSearch(term);
-  };
-
-  // The dashboard header search box lands here with ?q=...
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q")?.trim();
-    if (!q) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTerm(q);
-    void runSearch(q);
+    try {
+      setResults(await searchAll(q));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Search failed.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!query) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResults(null);
+      setError("");
+      setLoading(false);
+      return;
+    }
+
+    void runSearch(query);
+  }, [query, runSearch]);
 
   const userColumns: SaColumn<UserHit>[] = [
     { key: "id", label: "User ID", render: (row) => row.id_number },
@@ -108,12 +125,17 @@ export default function SearchPage() {
 
   return (
     <SaPage kicker="Search" title="Search" subtitle="Find users, skills, projects, phases, assignments, materials and equipment across the system">
-      <SaPanel title="Global Search" filters={<form onSubmit={submit} style={{ display: "flex", gap: "0.5rem" }}>
-        <input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search..." />
-        <button type="submit" className={styles.linkButton}>Search</button>
-      </form>}>
-        {loading ? <p className={styles.muted}>Searching...</p> : error ? <p className={styles.alert}>{error}</p> : results ? <p className={styles.muted}>Results for &quot;{term}&quot;.</p> : <p className={styles.muted}>Enter a term and press Search.</p>}
-      </SaPanel>
+      {loading ? (
+        <p className={styles.muted}>Searching...</p>
+      ) : error ? (
+        <p className={styles.alert}>{error}</p>
+      ) : results ? (
+        <p className={styles.muted}>Results for &quot;{query}&quot;.</p>
+      ) : (
+        <p className={styles.muted}>
+          Use the search bar in the top header to search the system.
+        </p>
+      )}
 
       {results ? (
         <>

@@ -32,6 +32,9 @@ class MaterialEquipmentUsageTest extends TestCase
             $table->string('project_name');
             $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedBigInteger('site_supervisor_id')->nullable();
+            $table->decimal('approved_budget', 15, 2)->default(0);
+            $table->decimal('materials_budget', 15, 2)->default(0);
+            $table->decimal('equipment_budget', 15, 2)->default(0);
             $table->string('status')->nullable();
         });
 
@@ -101,8 +104,22 @@ class MaterialEquipmentUsageTest extends TestCase
         });
 
         DB::table('projects')->insert([
-            ['project_id' => 1, 'project_name' => 'Assigned Site', 'site_supervisor_id' => 2000],
-            ['project_id' => 2, 'project_name' => 'Other Site', 'site_supervisor_id' => 2001],
+            [
+                'project_id' => 1,
+                'project_name' => 'Assigned Site',
+                'site_supervisor_id' => 2000,
+                'approved_budget' => 10000,
+                'materials_budget' => 5000,
+                'equipment_budget' => 3000,
+            ],
+            [
+                'project_id' => 2,
+                'project_name' => 'Other Site',
+                'site_supervisor_id' => 2001,
+                'approved_budget' => 10000,
+                'materials_budget' => 5000,
+                'equipment_budget' => 3000,
+            ],
         ]);
 
         DB::table('project_phases')->insert([
@@ -160,6 +177,34 @@ class MaterialEquipmentUsageTest extends TestCase
             'material_id' => 1,
             'stock_quantity' => 8,
         ]);
+    }
+
+    public function test_ss_material_usage_rejects_an_over_allocated_budget(): void
+    {
+        DB::table('projects')->where('project_id', 1)->update(['materials_budget' => 100]);
+        $this->actingAsRole(Role::SITE_SUPERVISOR, 2000, 'SUP030001');
+
+        $this->postJson('/api/v1/ss/materials', [
+            'material_id' => 1,
+            'phase_id' => 1,
+            'usage_date' => now()->toDateString(),
+            'quantity_used' => 1,
+        ])->assertStatus(422)
+            ->assertJsonPath('message', 'This material usage exceeds the remaining materials budget.');
+    }
+
+    public function test_ss_equipment_usage_rejects_an_over_allocated_budget(): void
+    {
+        DB::table('projects')->where('project_id', 1)->update(['equipment_budget' => 100]);
+        $this->actingAsRole(Role::SITE_SUPERVISOR, 2000, 'SUP030001');
+
+        $this->postJson('/api/v1/ss/equipment', [
+            'equipment_id' => 1,
+            'phase_id' => 1,
+            'usage_date' => now()->toDateString(),
+            'hours_used' => 1,
+        ])->assertStatus(422)
+            ->assertJsonPath('message', 'This equipment usage exceeds the remaining equipment budget.');
     }
 
     public function test_ss_equipment_usage_returns_the_created_id(): void

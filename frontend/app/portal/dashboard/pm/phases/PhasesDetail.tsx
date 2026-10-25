@@ -10,10 +10,12 @@ import {
   type PmPhase,
   type PmProject,
 } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import {
   SaPanel,
   SaTable,
   StatusBadge,
+  Tabs,
   money,
   type SaColumn,
   type SaSortState,
@@ -37,6 +39,7 @@ export function PhasesPanel({ project }: { project: PmProject }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PmPhase | null>(null);
   const [detail, setDetail] = useState<{ title: string; rows: DetailRow[] } | null>(null);
+  const [tab, setTab] = useState<"phases" | "tasks">("phases");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -124,7 +127,7 @@ export function PhasesPanel({ project }: { project: PmProject }) {
 
   const handleDelete = async (phase: PmPhase) => {
     if (
-      !window.confirm(
+      !confirmDelete(
         `Delete the phase "${phase.phase_name ?? "phase"}"? Only Not Started phases with no tasks, laborers, or logged usage can be deleted.`,
       )
     ) {
@@ -247,39 +250,52 @@ export function PhasesPanel({ project }: { project: PmProject }) {
         </p>
       ) : null}
 
-      <SaPanel
-        title={`Phases (${phases.length})`}
-        filters={
-          <button
-            type="button"
-            className={styles.primaryButton}
-            onClick={() => {
-              setEditing(null);
-              setModalOpen(true);
-            }}
-          >
-            + Add Phase
-          </button>
-        }
-      >
-        <SaTable
-          columns={columns}
-          rows={sortedPhases}
-          loading={loading}
-          error={error}
-          emptyText="No phases yet. Use + Add Phase to create the first one."
-          rowKey={(row) => row.phase_id}
-          sort={sort}
-          onSortChange={setSort}
-        />
-      </SaPanel>
+      <Tabs
+        items={[
+          { id: "phases", label: `Phases (${phases.length})` },
+          { id: "tasks", label: "Site Tasks" },
+        ]}
+        active={tab}
+        onChange={setTab}
+        label="Phase and task views"
+      />
 
-      <TasksPanel project={project} phases={phases} />
+      {tab === "phases" ? (
+        <SaPanel
+          title={`Phases (${phases.length})`}
+          filters={
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => {
+                setEditing(null);
+                setModalOpen(true);
+              }}
+            >
+              + Add Phase
+            </button>
+          }
+        >
+          <SaTable
+            columns={columns}
+            rows={sortedPhases}
+            loading={loading}
+            error={error}
+            emptyText="No phases yet. Use + Add Phase to create the first one."
+            rowKey={(row) => row.phase_id}
+            sort={sort}
+            onSortChange={setSort}
+          />
+        </SaPanel>
+      ) : (
+        <TasksPanel project={project} phases={phases} />
+      )}
 
       <PhaseModal
         open={modalOpen}
         phase={editing}
         project={project}
+        phases={phases}
         onClose={() => setModalOpen(false)}
         onSaved={handleSaved}
       />

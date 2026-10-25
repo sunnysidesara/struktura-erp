@@ -14,6 +14,7 @@ import {
   listPmPhases,
   type PmPhase,
 } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import {
   SaPanel,
   SaTable,
@@ -143,7 +144,7 @@ export function UsagePanel({
       : "The project budget will be refunded.";
 
     if (
-      !window.confirm(
+      !confirmDelete(
         `Void the ${kind} log for ${row.name} (${row.amount}) on ${row.phase}? ${refund}`,
       )
     ) {

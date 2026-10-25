@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { createSsMaterialUsage, deleteSsMaterialUsage, getSsMaterials, updateSsMaterialUsage, type SsMaterialLog } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createSsMaterialUsage, deleteSsMaterialUsage, getSsMaterials, type SsMaterialLog } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import { SaPanel, SaTable, Tabs, money, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 import {
   ErrorNote,
@@ -40,15 +41,8 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [saving, setSaving] = useState(false);
-  const [editingLog, setEditingLog] = useState<SsMaterialLog | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (data?.server_date && date === "") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDate(data.server_date);
-    }
-  }, [data?.server_date, date]);
+  const initializedProject = useRef<number | null>(null);
 
   useEffect(() => {
     if (data?.server_date && dateFilter === "") {
@@ -58,13 +52,16 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
   }, [data?.server_date, dateFilter]);
 
   useEffect(() => {
-    if (!data || phaseId !== "") return;
+    if (!data || initializedProject.current === projectId) return;
+
+    initializedProject.current = projectId;
     const active = data.phases.find((phase) => phase.status === "In Progress") ?? data.phases[0];
     if (active) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPhaseId(String(active.phase_id));
     }
-  }, [data, phaseId]);
+    setDate(data.server_date);
+  }, [data, projectId]);
 
   const materials = data?.materials ?? [];
   const phases = data?.phases ?? [];
@@ -81,6 +78,14 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
       }),
     [data?.logs, dateFilter, phaseFilter],
   );
+
+  function resetForm() {
+    setMaterialId("");
+    setPhaseId("");
+    setDate("");
+    setQuantity("");
+    setFormError("");
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -109,32 +114,38 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
       setFormError("Usage date cannot be in the future.");
       return;
     }
-    if (editingLog === null && selected && qty > selected.stock) {
+    if (selected && qty > selected.stock) {
       setFormError(
         `Only ${selected.stock} ${selected.unit ?? "unit(s)"} of ${selected.name} remain in stock.`,
       );
       return;
     }
 
+    if (selected) {
+      const cost = qty * selected.unit_cost;
+      const remaining = data?.metrics.materials_remaining ?? 0;
+
+      if (cost > remaining) {
+        setFormError(
+          `This material usage exceeds the remaining materials budget of ${money(remaining)}.`,
+        );
+        return;
+      }
+    }
+
     setSaving(true);
-    const wasEditing = editingLog !== null;
 
     try {
-      const body = {
+      const result = await createSsMaterialUsage({
         material_id: Number(materialId),
         phase_id: Number(phaseId),
         usage_date: date,
         quantity_used: qty,
-      };
-      const result = wasEditing
-        ? await updateSsMaterialUsage(editingLog.usage_id, body)
-        : await createSsMaterialUsage(body);
+      });
 
       setNotice({ type: "success", message: result.message });
-      setEditingLog(null);
-      setQuantity("");
+      resetForm();
       reload();
-      if (wasEditing) setTab("usage");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not save the material usage.");
     } finally {
@@ -142,27 +153,9 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
     }
   }
 
-  function startEdit(row: SsMaterialLog) {
-    setEditingLog(row);
-    setMaterialId(String(row.material_id));
-    setPhaseId(String(row.phase_id));
-    setDate(String(row.date).slice(0, 10));
-    setQuantity(String(row.quantity));
-    setFormError("");
-    setNotice(null);
-    setTab("log");
-  }
-
-  function cancelEdit() {
-    setEditingLog(null);
-    setQuantity("");
-    setFormError("");
-    setTab("usage");
-  }
-
   async function handleDelete(row: SsMaterialLog) {
     if (
-      !window.confirm(
+      !confirmDelete(
         `Void the material log for ${row.material} on ${row.date}? Stock and the project budget will be refunded.`,
       )
     ) {
@@ -175,10 +168,6 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
     try {
       const result = await deleteSsMaterialUsage(row.usage_id);
       setNotice({ type: "success", message: result.message });
-      if (editingLog?.usage_id === row.usage_id) {
-        setEditingLog(null);
-        setQuantity("");
-      }
       reload();
     } catch (err) {
       setNotice({
@@ -206,9 +195,6 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
       label: "Actions",
       render: (row) => (
         <div className={styles.actionCell}>
-          <button type="button" className={styles.linkButton} onClick={() => startEdit(row)}>
-            Edit
-          </button>
           <button
             type="button"
             className={styles.linkButtonAlt}
@@ -273,7 +259,7 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
                 <option value="all">All Phases</option>
                 {phases.map((phase) => (
                   <option key={phase.phase_id} value={phase.phase_id}>
-                    {phase.sequence}. {phase.name}
+                    {phase.name}
                   </option>
                 ))}
               </select>
@@ -290,7 +276,7 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
           />
         </SaPanel>
       ) : (
-        <SaPanel title={editingLog ? "Edit material usage" : "Log today's material usage"}>
+        <SaPanel title="Log today's material usage">
           {loading ? (
             <p className={ssStyles.muted}>Loading materials...</p>
           ) : phases.length === 0 ? (
@@ -320,7 +306,7 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
                   <option value="">Select phase</option>
                   {phases.map((phase) => (
                     <option key={phase.phase_id} value={phase.phase_id}>
-                      {phase.sequence}. {phase.name} ({phase.status ?? "-"})
+                      {phase.name}
                     </option>
                   ))}
                 </select>
@@ -354,22 +340,8 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
               ) : null}
               {formError !== "" ? <ErrorNote>{formError}</ErrorNote> : null}
               <FormActions>
-                {editingLog ? (
-                  <button
-                    type="button"
-                    className={styles.linkButton}
-                    onClick={cancelEdit}
-                    disabled={saving}
-                  >
-                    Cancel edit
-                  </button>
-                ) : null}
                 <SubmitButton>
-                  {saving
-                    ? "Saving..."
-                    : editingLog
-                      ? "Update usage"
-                      : "Record material usage"}
+                  {saving ? "Saving..." : "Record material usage"}
                 </SubmitButton>
               </FormActions>
             </FormShell>

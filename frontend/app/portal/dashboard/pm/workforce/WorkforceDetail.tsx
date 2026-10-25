@@ -15,6 +15,7 @@ import {
   type PmProject,
   type PmWorkforce,
 } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import {
   SaPanel,
   SaTable,
@@ -265,7 +266,7 @@ export function WorkforceDetail({ project, projects, onProjectChange, onClose }:
     }
 
     if (
-      !window.confirm(
+      !confirmDelete(
         `Delete ${profile.first_name} ${profile.last_name}? Laborers with assignments or logged hours cannot be deleted.`,
       )
     ) {
@@ -365,7 +366,7 @@ export function WorkforceDetail({ project, projects, onProjectChange, onClose }:
     }
 
     if (
-      !window.confirm(
+      !confirmDelete(
         `Remove ${row.first_name} ${row.last_name} from ${row.phase ?? "this phase"}? Assignments with logged hours cannot be removed.`,
       )
     ) {

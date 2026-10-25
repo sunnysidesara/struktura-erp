@@ -210,7 +210,6 @@ class AdminController extends Controller
 
                     return $row;
                 }),
-            'suppliers' => DB::table('suppliers')->orderBy('supplier_name')->get(),
         ]);
     }
 

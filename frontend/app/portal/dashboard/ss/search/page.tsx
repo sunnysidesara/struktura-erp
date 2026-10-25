@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { getSsSearch, type SsSearchResponse } from "@/lib/api";
 import {
   SaPage,
@@ -86,6 +87,14 @@ const equipmentColumns: SaColumn<EquipmentHit>[] = [
 ];
 
 export default function SsSearchPage() {
+  return (
+    <Suspense fallback={null}>
+      <SsSearchPageContent />
+    </Suspense>
+  );
+}
+
+function SsSearchPageContent() {
   const { selected } = useSsSite();
 
   return (
@@ -106,77 +115,61 @@ export default function SsSearchPage() {
 }
 
 function SsSearchPanel({ projectId }: { projectId: number }) {
-  const [term, setTerm] = useState("");
+  const searchParams = useSearchParams();
+  const query = searchParams.get("q")?.trim() ?? "";
   const [results, setResults] = useState<SsSearchResponse | null>(null);
   const [tab, setTab] = useState<SearchTab>("workers");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const runSearch = async (value: string) => {
-    const q = value.trim();
-    if (!q) {
+  const runSearch = useCallback(
+    async (value: string) => {
+      const q = value.trim();
+      if (!q) {
+        setResults(null);
+        setError("");
+        return;
+      }
+
+      setLoading(true);
+      setError("");
+      try {
+        setResults(await getSsSearch(q, projectId));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Search failed.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [projectId],
+  );
+
+  useEffect(() => {
+    if (!query) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults(null);
       setError("");
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
-    setError("");
-    try {
-      setResults(await getSsSearch(q, projectId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void runSearch(term);
-  };
-
-  // The dashboard header search lands here with ?q=...
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q")?.trim();
-    if (!q) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTerm(q);
-    void runSearch(q);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void runSearch(query);
+  }, [projectId, query, runSearch]);
 
   return (
     <>
-      <SaPanel
-        title="Site Search"
-        filters={
-          <form onSubmit={submit} style={{ display: "flex", gap: "0.5rem" }}>
-            <input
-              value={term}
-              onChange={(event) => setTerm(event.target.value)}
-              placeholder="Search workers, phases, tasks..."
-              aria-label="Search this site"
-            />
-            <button type="submit" className={styles.linkButton}>
-              Search
-            </button>
-          </form>
-        }
-      >
-        {loading ? (
-          <p className={styles.muted}>Searching...</p>
-        ) : error ? (
-          <p className={styles.alert}>{error}</p>
-        ) : results ? (
-          <p className={styles.muted}>Results for &quot;{term}&quot;.</p>
-        ) : (
-          <p className={styles.muted}>
-            Enter a term to search workers, phases, tasks, materials and equipment
-            for this site.
-          </p>
-        )}
-      </SaPanel>
+      {loading ? (
+        <p className={styles.muted}>Searching...</p>
+      ) : error ? (
+        <p className={styles.alert}>{error}</p>
+      ) : results ? (
+        <p className={styles.muted}>Results for &quot;{query}&quot;.</p>
+      ) : (
+        <p className={styles.muted}>
+          Use the search bar in the top header to search workers, phases, tasks,
+          materials and equipment for this site.
+        </p>
+      )}
 
       {results ? (
         <>

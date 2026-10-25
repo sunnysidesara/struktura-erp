@@ -24,7 +24,7 @@ import {
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import styles from "../page.module.css";
 
-type FinanceTab = "breakdown" | "budget";
+type FinanceTab = "budget" | "breakdown";
 
 type ResourceRow = {
   resource: string;
@@ -74,7 +74,7 @@ export default function AdminFinancePage() {
   const projects = useMemo<ApiProject[]>(() => projectData ?? [], [projectData]);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [tab, setTab] = useState<FinanceTab>("breakdown");
+  const [tab, setTab] = useState<FinanceTab>("budget");
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [budget, setBudget] = useState<PmBudget | null>(null);
   const [report, setReport] = useState<PmCostReport | null>(null);
@@ -101,8 +101,13 @@ export default function AdminFinancePage() {
       return;
     }
 
-    // A project change starts with the complete phase-cost view.
+    // A project change starts with the complete phase-cost view. Clear the
+    // previous project's data so a failed request cannot leave it on screen.
     setPhaseFilter("all");
+    setBudget(null);
+    setReport(null);
+    setPhaseCosts([]);
+    setDetailError("");
     let active = true;
     setDetailLoading(true);
 
@@ -163,10 +168,14 @@ export default function AdminFinancePage() {
     [phaseCosts, phaseFilter],
   );
 
-  const value = (amount: number | undefined) =>
-    detailLoading ? "..." : money(amount ?? 0);
-  const percent = (amount: number | undefined) =>
-    detailLoading ? "..." : `${amount ?? 0}%`;
+  const value = (amount: number | undefined) => {
+    if (detailLoading) return "...";
+    return amount === undefined ? "\u2014" : money(amount);
+  };
+  const percent = (amount: number | undefined) => {
+    if (detailLoading) return "...";
+    return amount === undefined ? "\u2014" : `${amount}%`;
+  };
 
   return (
     <SaPage
@@ -248,8 +257,8 @@ export default function AdminFinancePage() {
 
       <Tabs
         items={[
-          { id: "breakdown", label: "Cost Breakdown" },
           { id: "budget", label: "Budget Overview" },
+          { id: "breakdown", label: "Cost Breakdown" },
         ]}
         active={tab}
         onChange={setTab}

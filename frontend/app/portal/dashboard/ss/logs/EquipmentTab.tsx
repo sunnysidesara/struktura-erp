@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createSsEquipmentUsage, deleteSsEquipmentUsage, getSsEquipment, updateSsEquipmentUsage, type SsEquipmentLog } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import { SaPanel, SaTable, Tabs, money, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 import {
   ErrorNote,
@@ -42,13 +43,7 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
   const [saving, setSaving] = useState(false);
   const [editingLog, setEditingLog] = useState<SsEquipmentLog | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (data?.server_date && date === "") {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDate(data.server_date);
-    }
-  }, [data?.server_date, date]);
+  const initializedProject = useRef<number | null>(null);
 
   useEffect(() => {
     if (data?.server_date && dateFilter === "") {
@@ -58,13 +53,16 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
   }, [data?.server_date, dateFilter]);
 
   useEffect(() => {
-    if (!data || phaseId !== "") return;
+    if (!data || initializedProject.current === projectId) return;
+
+    initializedProject.current = projectId;
     const active = data.phases.find((phase) => phase.status === "In Progress") ?? data.phases[0];
     if (active) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPhaseId(String(active.phase_id));
     }
-  }, [data, phaseId]);
+    setDate(data.server_date);
+  }, [data, projectId]);
 
   const machines = data?.equipment ?? [];
   const phases = data?.phases ?? [];
@@ -81,6 +79,14 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
       }),
     [data?.logs, dateFilter, phaseFilter],
   );
+
+  function resetForm() {
+    setEquipmentId("");
+    setPhaseId("");
+    setDate("");
+    setHours("");
+    setFormError("");
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -118,6 +124,19 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
       return;
     }
 
+    if (selected) {
+      const cost = value * selected.hourly_rate;
+      const remaining =
+        (data?.metrics.equipment_remaining ?? 0) + (editingLog?.expense ?? 0);
+
+      if (cost > remaining) {
+        setFormError(
+          `This equipment usage exceeds the remaining equipment budget of ${money(remaining)}.`,
+        );
+        return;
+      }
+    }
+
     setSaving(true);
     const wasEditing = editingLog !== null;
 
@@ -134,7 +153,7 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
 
       setNotice({ type: "success", message: result.message });
       setEditingLog(null);
-      setHours("");
+      resetForm();
       reload();
       if (wasEditing) setTab("usage");
     } catch (err) {
@@ -164,7 +183,7 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
 
   async function handleDelete(row: SsEquipmentLog) {
     if (
-      !window.confirm(
+      !confirmDelete(
         `Void the equipment log for ${row.equipment} on ${row.date}? The project budget will be refunded.`,
       )
     ) {
@@ -271,7 +290,7 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
                 <option value="all">All Phases</option>
                 {phases.map((phase) => (
                   <option key={phase.phase_id} value={phase.phase_id}>
-                    {phase.sequence}. {phase.name}
+                    {phase.name}
                   </option>
                 ))}
               </select>
@@ -318,7 +337,7 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
                   <option value="">Select phase</option>
                   {phases.map((phase) => (
                     <option key={phase.phase_id} value={phase.phase_id}>
-                      {phase.sequence}. {phase.name} ({phase.status ?? "-"})
+                      {phase.name}
                     </option>
                   ))}
                 </select>

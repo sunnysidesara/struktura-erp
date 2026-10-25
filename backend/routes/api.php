@@ -118,6 +118,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/pm/phases/{phase}', [PmController::class, 'destroyPhase']);
                 Route::post('/pm/tasks', [TaskController::class, 'store']);
                 Route::put('/pm/tasks/{task}', [TaskController::class, 'update']);
+                Route::put('/pm/tasks/{task}/status', [TaskController::class, 'updateStatus']);
                 Route::delete('/pm/tasks/{task}', [TaskController::class, 'destroy']);
                 Route::post('/pm/assignments', [PmController::class, 'storeAssignment']);
                 Route::delete('/pm/assignments/{assignment}', [PmController::class, 'destroyAssignment']);

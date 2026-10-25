@@ -8,8 +8,8 @@ import {
   getAdminResources,
   type ApiEquipment,
   type ApiMaterial,
-  type ApiSupplier,
 } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import {
   SaPage,
   SaPanel,
@@ -24,7 +24,7 @@ import styles from "../page.module.css";
 import { CatalogueModal } from "./CatalogueModal";
 import { StatusActions, type StatusAction } from "../../_components/StatusActions";
 
-type TabId = "equipment" | "materials" | "suppliers";
+type TabId = "equipment" | "materials";
 type Editor =
   | { kind: "material"; item: ApiMaterial | null }
   | { kind: "equipment"; item: ApiEquipment | null }
@@ -34,7 +34,6 @@ type Notice = { type: "success" | "error"; message: string } | null;
 const TABS: { id: TabId; label: string }[] = [
   { id: "equipment", label: "Equipment" },
   { id: "materials", label: "Materials" },
-  { id: "suppliers", label: "Suppliers" },
 ];
 
 export default function ResourcesPage() {
@@ -47,7 +46,6 @@ export default function ResourcesPage() {
 
   const equipment = data?.equipment ?? [];
   const materials = data?.materials ?? [];
-  const suppliers = data?.suppliers ?? [];
 
   const handleSaved = (message: string) => {
     setEditor(null);
@@ -67,7 +65,7 @@ export default function ResourcesPage() {
         ? (row as ApiEquipment).equipment_name
         : (row as ApiMaterial).material_name;
 
-    if (!window.confirm(`Delete ${kind} "${name}"?`)) {
+    if (!confirmDelete(`Delete ${kind} "${name}"?`)) {
       return;
     }
 
@@ -97,7 +95,6 @@ export default function ResourcesPage() {
   };
 
   const openCreate = () => {
-    if (tab === "suppliers") return;
     setEditor({ kind: tab === "materials" ? "material" : "equipment", item: null });
   };
 
@@ -230,33 +227,15 @@ export default function ResourcesPage() {
     },
   ];
 
-  const supplierColumns: SaColumn<ApiSupplier>[] = [
-    { key: "name", label: "Supplier", render: (row) => row.supplier_name },
-    {
-      key: "contact",
-      label: "Contact",
-      render: (row) =>
-        [row.contact_name, row.contact_num].filter(Boolean).join(" - ") || "-",
-    },
-    {
-      key: "location",
-      label: "Location",
-      render: (row) =>
-        [row.city, row.state_province, row.country].filter(Boolean).join(", "),
-    },
-  ];
-
   return (
     <SaPage
       kicker="Operations"
       title="Resources"
-      subtitle="Equipment, materials and suppliers"
+      subtitle="Equipment and materials"
       actions={
-        tab === "suppliers" ? undefined : (
-          <button type="button" className={styles.primaryButton} onClick={openCreate}>
-            + New {tab === "materials" ? "Material" : "Equipment"}
-          </button>
-        )
+        <button type="button" className={styles.primaryButton} onClick={openCreate}>
+          + New {tab === "materials" ? "Material" : "Equipment"}
+        </button>
       }
     >
       {notice ? (
@@ -294,19 +273,6 @@ export default function ResourcesPage() {
             error={error}
             emptyText="No materials recorded."
             rowKey={(row) => row.material_id}
-          />
-        </SaPanel>
-      ) : null}
-
-      {tab === "suppliers" ? (
-        <SaPanel title={`Suppliers (${suppliers.length})`}>
-          <SaTable
-            columns={supplierColumns}
-            rows={suppliers}
-            loading={loading}
-            error={error}
-            emptyText="No suppliers recorded."
-            rowKey={(row) => row.supplier_id}
           />
         </SaPanel>
       ) : null}

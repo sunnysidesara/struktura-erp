@@ -47,8 +47,8 @@ class AuthController extends Controller
             ]);
         }
 
-        // Revoke prior tokens on login so each session gets a fresh token.
-        $user->tokens()->delete();
+        // Keep existing tokens so a second tab or device has its own session.
+        // Explicit sign-out-everywhere and password changes still revoke them.
         $token = $user->createToken('api')->plainTextToken;
 
         $this->recordLoginAttempt($request, $user, 'success');

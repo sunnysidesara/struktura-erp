@@ -9,6 +9,7 @@ import {
   updateSsLaborLog,
   type SsLaborLog,
 } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import { SaPanel, SaTable, Tabs, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 import {
   ErrorNote,
@@ -25,8 +26,8 @@ type Notice = { type: "success" | "error"; message: string } | null;
 type TabId = "add" | "history";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "add", label: "Add Log for Today" },
   { id: "history", label: "All Workers Log" },
+  { id: "add", label: "Add Log for Today" },
 ];
 const SHIFTS = ["Morning", "Afternoon"] as const;
 
@@ -38,8 +39,8 @@ export function LaborTab({ projectId }: { projectId: number }) {
   // Phase dropdown is fed live from the phases endpoint.
   const phaseResource = useSsResource(() => getSsPhases(projectId), projectId);
 
-  // The form is the default view so logging a worker is always one click away.
-  const [tab, setTab] = useState<TabId>("add");
+  // History is the default view; adding a log is always one click away.
+  const [tab, setTab] = useState<TabId>("history");
 
   const [dateFilter, setDateFilter] = useState("");
   const [shiftFilter, setShiftFilter] = useState("all");
@@ -208,7 +209,7 @@ export function LaborTab({ projectId }: { projectId: number }) {
 
   async function handleDelete(row: SsLaborLog) {
     if (
-      !window.confirm(
+      !confirmDelete(
         `Void the labor log for ${row.worker} on ${row.date}? The project budget will be refunded.`,
       )
     ) {
@@ -372,7 +373,7 @@ export function LaborTab({ projectId }: { projectId: number }) {
                 ) : null}
                 {sitePhases.map((phase) => (
                   <option key={phase.phase_id} value={phase.phase_id}>
-                    {phase.sequence}. {phase.name}
+                    {phase.name}
                   </option>
                 ))}
               </select>
@@ -434,7 +435,7 @@ export function LaborTab({ projectId }: { projectId: number }) {
                 <option value="all">All Phases</option>
                 {sitePhases.map((phase) => (
                   <option key={phase.phase_id} value={phase.phase_id}>
-                    {phase.sequence}. {phase.name}
+                    {phase.name}
                   </option>
                 ))}
               </select>

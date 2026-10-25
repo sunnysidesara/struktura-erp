@@ -44,6 +44,7 @@ export function PhaseModal({
   open,
   phase,
   project,
+  phases,
   onClose,
   onSaved,
 }: {
@@ -52,6 +53,8 @@ export function PhaseModal({
   phase: PmPhase | null;
   /** The project currently selected in the header; phases always belong to it. */
   project: PmProject;
+  /** Existing phases are used to validate project-wide budget allocations. */
+  phases: PmPhase[];
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
@@ -161,13 +164,50 @@ export function PhaseModal({
       return;
     }
 
+    const cost = values.cost === "" ? 0 : Number(values.cost);
+    const materials = values.materials === "" ? 0 : Number(values.materials);
+    const equipment = values.equipment === "" ? 0 : Number(values.equipment);
+
+    if (
+      !Number.isFinite(cost) ||
+      cost < 0 ||
+      !Number.isFinite(materials) ||
+      materials < 0 ||
+      !Number.isFinite(equipment) ||
+      equipment < 0
+    ) {
+      setFormError("Phase budgets must be positive amounts.");
+      return;
+    }
+
+    const otherPhases = phases.filter(
+      (row) => row.phase_id !== phase?.phase_id,
+    );
+    const allocatedCost =
+      otherPhases.reduce((sum, row) => sum + Number(row.project_cost ?? 0), 0) + cost;
+    const allocatedMaterials =
+      otherPhases.reduce((sum, row) => sum + Number(row.materials_budget ?? 0), 0) +
+      materials;
+    const allocatedEquipment =
+      otherPhases.reduce((sum, row) => sum + Number(row.equipment_budget ?? 0), 0) +
+      equipment;
+
+    if (
+      Math.round(allocatedCost * 100) > Math.round(project.approved_budget * 100) ||
+      Math.round(allocatedMaterials * 100) > Math.round(project.materials_budget * 100) ||
+      Math.round(allocatedEquipment * 100) > Math.round(project.equipment_budget * 100)
+    ) {
+      setFormError("Invalid: The set budget exceeds the allocated budget limit.");
+      return;
+    }
+
     const payload = {
       phase_name: values.name.trim(),
       description: values.description.trim() || null,
       sequence_no: values.sequence === "" ? null : Number(values.sequence),
-      project_cost: values.cost === "" ? null : Number(values.cost),
-      materials_budget: values.materials === "" ? 0 : Number(values.materials),
-      equipment_budget: values.equipment === "" ? 0 : Number(values.equipment),
+      project_cost: values.cost === "" ? null : cost,
+      materials_budget: materials,
+      equipment_budget: equipment,
       planned_start: values.start || null,
       planned_end: values.end || null,
       required_skill_id: values.skillId === "" ? null : Number(values.skillId),
@@ -199,6 +239,18 @@ export function PhaseModal({
         }
         if (first("required_skill_id")) {
           setSkillError(first("required_skill_id") as string);
+          return;
+        }
+        if (
+          first("project_cost") ||
+          first("materials_budget") ||
+          first("equipment_budget")
+        ) {
+          setFormError(
+            first("project_cost") ??
+              first("materials_budget") ??
+              (first("equipment_budget") as string),
+          );
           return;
         }
       }

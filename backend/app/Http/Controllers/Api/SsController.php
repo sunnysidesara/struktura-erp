@@ -268,6 +268,78 @@ class SsController extends Controller
     }
 
     /**
+     * Return a budget error when a proposed category cost would exceed the
+     * project's allocated amount. The current usage row is excluded when a
+     * correction replaces an existing entry.
+     */
+    private function budgetViolation(
+        int $projectId,
+        string $category,
+        float $additionalCost,
+        ?int $excludeUsageId = null,
+    ): ?string {
+        $project = DB::table('projects')
+            ->where('project_id', $projectId)
+            ->first(['project_id', 'approved_budget', 'materials_budget', 'equipment_budget']);
+
+        if (! $project) {
+            return 'The project for this log could not be found.';
+        }
+
+        $limit = match ($category) {
+            'materials' => (float) $project->materials_budget,
+            'equipment' => (float) $project->equipment_budget,
+            'labor' => max(
+                0.0,
+                (float) $project->approved_budget
+                    - (float) $project->materials_budget
+                    - (float) $project->equipment_budget
+            ),
+            default => 0.0,
+        };
+
+        $query = match ($category) {
+            'materials' => DB::table('material_usage as usage')
+                ->join('project_phases as ph', 'ph.phase_id', '=', 'usage.phase_id')
+                ->where('ph.project_id', $projectId),
+            'equipment' => DB::table('equipment_usage as usage')
+                ->join('project_phases as ph', 'ph.phase_id', '=', 'usage.phase_id')
+                ->where('ph.project_id', $projectId),
+            'labor' => DB::table('labor_hour_log as usage')
+                ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'usage.assignment_id')
+                ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+                ->where('ph.project_id', $projectId),
+            default => null,
+        };
+
+        if ($query === null) {
+            return null;
+        }
+
+        if ($excludeUsageId !== null) {
+            $key = match ($category) {
+                'materials' => 'usage.material_usage_id',
+                'equipment' => 'usage.equipment_usage_id',
+                'labor' => 'usage.log_id',
+            };
+            $query->where($key, '!=', $excludeUsageId);
+        }
+
+        $spent = round((float) $query->sum('usage.computed_cost'), 2);
+
+        if (round($spent + $additionalCost, 2) <= round($limit, 2)) {
+            return null;
+        }
+
+        return match ($category) {
+            'materials' => 'This material usage exceeds the remaining materials budget.',
+            'equipment' => 'This equipment usage exceeds the remaining equipment budget.',
+            'labor' => 'This labor log exceeds the remaining labor budget.',
+            default => 'This entry exceeds the allocated budget.',
+        };
+    }
+
+    /**
      * Overall progress per project (average of its phase progress).
      *
      * @param  array<int, int>  $ids
@@ -570,6 +642,7 @@ class SsController extends Controller
                 'name' => $row->material_name,
                 'unit' => $row->unit_of_measure,
                 'stock' => (int) $row->stock_quantity,
+                'unit_cost' => (float) $row->unit_cost,
             ])->values()->all();
     }
 
@@ -586,6 +659,7 @@ class SsController extends Controller
                 'name' => $row->equipment_name,
                 'type' => $row->equipment_type,
                 'status' => $row->equipment_status,
+                'hourly_rate' => (float) $row->hourly_rental_rate,
             ])->values()->all();
     }
     /**
@@ -1031,6 +1105,7 @@ class SsController extends Controller
                 't.status',
                 'p.project_name',
                 'ph.project_name as phase_name',
+                'ph.status as phase_status',
                 'l.first_name',
                 'l.last_name'
             );
@@ -1052,6 +1127,8 @@ class SsController extends Controller
             ->map(fn ($row) => [
                 'id' => 'TSK-'.$row->task_id,
                 'task_id' => (int) $row->task_id,
+                'phase_id' => $row->phase_id !== null ? (int) $row->phase_id : null,
+                'phase_status' => $row->phase_status,
                 'date' => $row->task_date,
                 'time' => $row->start_time ? substr((string) $row->start_time, 0, 5) : '',
                 'title' => $row->title,
@@ -1410,6 +1487,12 @@ class SsController extends Controller
         }
 
         $rate = $this->rateForAssignment($assignment);
+        $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
+        $budgetError = $this->budgetViolation((int) $assignment->project_id, 'labor', $cost);
+
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
 
         $logId = DB::transaction(function () use ($data, $shift, $timeIn, $timeOut, $regular, $overtime, $rate, $assignment, $request) {
             $log = LaborHourLog::create([
@@ -1516,6 +1599,19 @@ class SsController extends Controller
         }
 
         $rate = $this->rateForAssignment($assignment);
+        $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
+        $budgetError = $this->budgetViolation(
+            (int) $assignment->project_id,
+            'labor',
+            $cost,
+            (int) $original->project_id === (int) $assignment->project_id
+                ? (int) $log->log_id
+                : null,
+        );
+
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
 
         DB::transaction(function () use ($log, $assignment, $data, $shift, $timeIn, $timeOut, $regular, $overtime, $rate) {
             $log->update([
@@ -1593,6 +1689,16 @@ class SsController extends Controller
             return response()->json([
                 'message' => 'Only '.$this->stockLabel($material).' of '.$material->material_name.' remain in stock.',
             ], 422);
+        }
+
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'materials',
+            round($quantity * (float) $material->unit_cost, 2),
+        );
+
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
         }
 
         $usageId = DB::transaction(function () use ($data, $quantity, $phase, $material, $request) {
@@ -1684,6 +1790,19 @@ class SsController extends Controller
             ], 422);
         }
 
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'materials',
+            round($quantity * (float) $material->unit_cost, 2),
+            (int) $originalPhase->project_id === (int) $phase->project_id
+                ? (int) $usage->material_usage_id
+                : null,
+        );
+
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
+
         DB::transaction(function () use ($usage, $phase, $materialId, $material, $data, $quantity) {
             // Put the previous entry back, then apply the corrected one.
             $this->adjustMaterialStock((int) $usage->material_id, (float) $usage->quantity_used);
@@ -1767,6 +1886,16 @@ class SsController extends Controller
         }
 
         $hours = round((float) $data['hours_used'], 2);
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'equipment',
+            round($hours * (float) $equipment->hourly_rental_rate, 2),
+        );
+
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
+
         $usageId = DB::transaction(function () use ($data, $hours, $phase, $equipment, $request) {
             $usage = EquipmentUsage::create([
                 'equipment_id' => $equipment->equipment_id,
@@ -1838,6 +1967,19 @@ class SsController extends Controller
         }
 
         $hours = round((float) $data['hours_used'], 2);
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'equipment',
+            round($hours * (float) $equipment->hourly_rental_rate, 2),
+            (int) $originalPhase->project_id === (int) $phase->project_id
+                ? (int) $usage->equipment_usage_id
+                : null,
+        );
+
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
+
         DB::transaction(function () use ($usage, $phase, $equipmentId, $equipment, $data, $hours) {
             $usage->update([
                 'equipment_id' => $equipmentId,

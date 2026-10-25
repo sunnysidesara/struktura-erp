@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { deleteSkill, listSkills, type ApiSkill } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import {
   SaPage,
   SaPanel,
@@ -89,7 +90,7 @@ export default function SkillsPage() {
   };
 
   const remove = async (skill: ApiSkill) => {
-    if (!window.confirm(`Delete skill "${skill.skill_name}"?`)) {
+    if (!confirmDelete(`Delete skill "${skill.skill_name}"?`)) {
       return;
     }
 

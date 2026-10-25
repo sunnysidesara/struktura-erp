@@ -20,7 +20,6 @@ class AdminCatalogueTest extends TestCase
             'equipment',
             'material_usage',
             'equipment_usage',
-            'suppliers',
             'audit_logs',
         ] as $table) {
             Schema::dropIfExists($table);
@@ -54,16 +53,6 @@ class AdminCatalogueTest extends TestCase
         Schema::create('equipment_usage', function (Blueprint $table) {
             $table->increments('equipment_usage_id');
             $table->unsignedBigInteger('equipment_id');
-        });
-
-        Schema::create('suppliers', function (Blueprint $table) {
-            $table->increments('supplier_id');
-            $table->string('supplier_name');
-            $table->string('contact_name')->nullable();
-            $table->string('contact_num')->nullable();
-            $table->string('city')->nullable();
-            $table->string('state_province')->nullable();
-            $table->string('country')->nullable();
         });
 
         Schema::create('audit_logs', function (Blueprint $table) {
@@ -243,7 +232,8 @@ class AdminCatalogueTest extends TestCase
             ->assertJsonPath('materials.0.material_name', 'Test Rebar')
             ->assertJsonPath('materials.0.usage_count', 1)
             ->assertJsonPath('equipment.0.equipment_name', 'Test Excavator')
-            ->assertJsonPath('equipment.0.usage_count', 1);
+            ->assertJsonPath('equipment.0.usage_count', 1)
+            ->assertJsonMissingPath('suppliers');
     }
 
     public function test_non_admin_cannot_manage_the_catalogue(): void

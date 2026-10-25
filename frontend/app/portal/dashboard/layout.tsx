@@ -319,9 +319,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         // transient and must not wipe a valid session, otherwise a slow or
         // restarting backend bounces the user straight back to the login page.
         console.error("[dashboard] auth check failed", err);
-        const rejected =
-          err instanceof ApiError && (err.status === 401 || err.status === 403);
-        if (rejected) {
+        // A 401 is handled centrally by lib/api.ts (clear + redirect with a
+        // session-expired message). Only handle a role rejection here.
+        if (err instanceof ApiError && err.status === 403) {
           clearSession();
           router.replace("/portal");
         }
@@ -552,8 +552,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               {searchForm}
             </>
           ) : user.role === "PM" ? (
-            /* Managers swap the active project from the same place. */
-            <PmProjectSwitcher />
+            /* Managers swap the active project and search their projects. */
+            <>
+              <PmProjectSwitcher />
+              {searchForm}
+            </>
           ) : (
             searchForm
           )}

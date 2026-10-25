@@ -36,6 +36,9 @@ class HourlyRateTest extends TestCase
             $table->string('project_name');
             $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedBigInteger('site_supervisor_id')->nullable();
+            $table->decimal('approved_budget', 15, 2)->default(0);
+            $table->decimal('materials_budget', 15, 2)->default(0);
+            $table->decimal('equipment_budget', 15, 2)->default(0);
             $table->decimal('remaining_budget', 15, 2)->default(0);
             $table->timestamps();
         });
@@ -133,6 +136,9 @@ class HourlyRateTest extends TestCase
             'project_name' => 'Rate Test Project',
             'user_id' => 1000,
             'site_supervisor_id' => 2000,
+            'approved_budget' => 10000,
+            'materials_budget' => 1000,
+            'equipment_budget' => 1000,
             'remaining_budget' => 10000,
         ]);
 

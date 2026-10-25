@@ -10,8 +10,6 @@ import {
   type ApiUserRow,
 } from "@/lib/api";
 import {
-  MetricCard,
-  MetricGrid,
   SaPage,
   SaPanel,
   SaTable,
@@ -96,13 +94,6 @@ export default function SystemAdminDashboard() {
       actions={<Link className={styles.primaryButton} href="/portal/dashboard/sa/users?create=1">+ Create User</Link>}
     >
       {error ? <p className={styles.alert}>{error}</p> : null}
-
-      <MetricGrid>
-        <MetricCard label="Total Users" value={loading ? "..." : metrics?.total_users ?? 0} note={`${metrics?.active_users ?? 0} active`} />
-        <MetricCard label="Active Sessions" value={loading ? "..." : metrics?.active_sessions ?? 0} note="Issued API tokens" />
-        <MetricCard label="Skills Defined" value={loading ? "..." : metrics?.skills ?? 0} note="Trade catalog" />
-        <MetricCard label="Audit Events Today" value={loading ? "..." : metrics?.audit_events_today ?? 0} note="Changes recorded today" />
-      </MetricGrid>
 
       <section className={styles.analyticsGrid}>
         <article className={styles.panel}>

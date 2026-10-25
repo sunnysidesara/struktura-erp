@@ -274,6 +274,33 @@ class TaskManagementTest extends TestCase
             ->assertJsonPath('data.0.progress', 100);
     }
 
+    public function test_task_cannot_start_until_the_project_manager_starts_the_phase(): void
+    {
+        $id = $this->createTask();
+        DB::table('project_phases')->where('phase_id', 1)->update(['status' => 'Not Started']);
+
+        $this->actingAsRole(Role::SITE_SUPERVISOR, 2000, 'SUP030001');
+
+        $this->putJson("/api/v1/ss/tasks/{$id}/status", ['status' => 'In Progress'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'The Project Manager must start this phase before the task can begin.');
+
+        DB::table('project_phases')->where('phase_id', 1)->update(['status' => 'In Progress']);
+
+        $this->putJson("/api/v1/ss/tasks/{$id}/status", ['status' => 'In Progress'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'In Progress');
+    }
+
+    public function test_pm_can_start_a_site_task(): void
+    {
+        $id = $this->createTask();
+
+        $this->putJson("/api/v1/pm/tasks/{$id}/status", ['status' => 'In Progress'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'In Progress');
+    }
+
     public function test_site_supervisor_cannot_manage_task_definitions(): void
     {
         $this->actingAsRole(Role::SITE_SUPERVISOR, 2000, 'SUP030001');

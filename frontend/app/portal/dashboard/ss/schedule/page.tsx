@@ -124,14 +124,26 @@ function ScheduleDetail({ projectId }: { projectId: number }) {
       label: "Action",
       render: (row) => {
         if (row.status === "Pending") {
+          const phaseStarted =
+            !row.phase_id || row.phase_status === "In Progress";
+
           return (
             <button
               type="button"
               className={ssStyles.statusButton}
               onClick={() => handleStatusChange(row, "In Progress")}
-              disabled={statusUpdatingId !== null}
+              disabled={statusUpdatingId !== null || !phaseStarted}
+              title={
+                phaseStarted
+                  ? "Start this task"
+                  : "The Project Manager must start this phase before the task can begin."
+              }
             >
-              {statusUpdatingId === row.task_id ? "Starting..." : "Start Task"}
+              {statusUpdatingId === row.task_id
+                ? "Starting..."
+                : phaseStarted
+                  ? "Start Task"
+                  : "Awaiting PM Start"}
             </button>
           );
         }

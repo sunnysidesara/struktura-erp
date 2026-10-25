@@ -1049,6 +1049,51 @@
 }
 
 .summaryItem {
+
+/* Site Task status action cards. */
+.taskStatusCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.taskStatusActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.taskStatusActionCard {
+  padding: 0.3rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.taskStatusButton {
+  border: 1px solid #ca8a04;
+  border-radius: 5px;
+  background: #ca8a04;
+  color: #ffffff;
+  padding: 0.35rem 0.55rem;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.taskStatusButton:hover:not(:disabled) {
+  background: #a16207;
+}
+
+.taskStatusButton:disabled {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -1094,13 +1139,15 @@
 }
 
 
-/* Phase list: status cell + completion-request badge. */.statusCell {
+/* Phase list: status cell + completion-request badge. */
+.statusCell {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
   flex-wrap: wrap;
 }
-.completionBadge {
+
+.completionBadge {
   display: inline-flex;
   align-items: center;
   padding: 0.18rem 0.45rem;

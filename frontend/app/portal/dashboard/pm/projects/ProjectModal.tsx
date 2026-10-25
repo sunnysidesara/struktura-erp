@@ -138,7 +138,12 @@ export function ProjectModal({
     }
 
     if (Math.round((materials + equipment) * 100) > Math.round(budget * 100)) {
-      setFormError("Materials and equipment allocations cannot exceed the total budget.");
+      setFormError("Invalid: The set budget exceeds the allocated budget limit.");
+      return;
+    }
+
+    if (project && Math.round(budget * 100) < Math.round(project.spent_budget * 100)) {
+      setFormError("Invalid: The set budget is below the amount already spent.");
       return;
     }
 
@@ -179,6 +184,14 @@ export function ProjectModal({
         }
         if (first("end_date") || first("start_date")) {
           setDateError(first("end_date") ?? (first("start_date") as string));
+          return;
+        }
+        if (first("materials_budget") || first("equipment_budget") || first("approved_budget")) {
+          setFormError(
+            first("materials_budget") ??
+              first("equipment_budget") ??
+              (first("approved_budget") as string),
+          );
           return;
         }
       }

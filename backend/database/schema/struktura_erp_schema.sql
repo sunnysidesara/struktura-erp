@@ -2,7 +2,7 @@
 --  Struktura ERP - Construction Resource & Cost Management System
 --  Database : Aiven Cloud MySQL   (target database: `defaultdb`)
 --  Source   : Struktura_ERP_Final_Data_Dictionary.docx  (team's finalized ERD)
---  Build    : 18 tables * InnoDB * utf8mb4 / utf8mb4_unicode_ci
+--  Build    : 16 tables * InnoDB * utf8mb4 / utf8mb4_unicode_ci
 --
 --  HOW TO RUN
 --    VS Code -> SQLTools -> connect "Aiven-Cloud-DB" -> open this file -> Run
@@ -25,11 +25,9 @@ SET FOREIGN_KEY_CHECKS = 0;
 --  Drop (child -> parent) so this script is safe to re-run
 -- -----------------------------------------------------------------------------
 DROP TABLE IF EXISTS site_task;
-DROP TABLE IF EXISTS udit_logs;
-DROP TABLE IF EXISTS `materials_suppliers`;
+DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS `material_usage`;
 DROP TABLE IF EXISTS `materials`;
-DROP TABLE IF EXISTS `suppliers`;
 DROP TABLE IF EXISTS `equipment_usage`;
 DROP TABLE IF EXISTS `equipment`;
 DROP TABLE IF EXISTS `labor_hour_log`;
@@ -403,34 +401,6 @@ CREATE TABLE `material_usage` (
     REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT `fk_material_usage_updated_by` FOREIGN KEY (`updated_by`)
     REFERENCES `users` (`user_id`) ON UPDATE CASCADE ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Vendors that supply construction materials.
-CREATE TABLE `suppliers` (
-  `supplier_id`     BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `supplier_name`   VARCHAR(255) NOT NULL COMMENT 'Registered / trade name of the supplier',
-  `contact_name`    VARCHAR(255) NULL COMMENT 'Primary contact at the supplier',
-  `contact_num`     VARCHAR(50)  NULL COMMENT 'Contact phone number',
-  `street_address`  VARCHAR(255) NULL COMMENT 'Street address',
-  `city`            VARCHAR(100) NULL COMMENT 'City',
-  `state_province`  VARCHAR(100) NULL COMMENT 'State or province',
-  `postal_code`     VARCHAR(20)  NULL COMMENT 'Postal / ZIP code',
-  `country`         VARCHAR(100) NULL COMMENT 'Country',
-  PRIMARY KEY (`supplier_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Junction: which suppliers provide which materials.
-CREATE TABLE `materials_suppliers` (
-  `material_suppliers_id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `material_id`           BIGINT UNSIGNED NOT NULL COMMENT 'FK -> materials.material_id',
-  `supplier_id`           BIGINT UNSIGNED NOT NULL COMMENT 'FK -> suppliers.supplier_id',
-  PRIMARY KEY (`material_suppliers_id`),
-  UNIQUE KEY `uq_materials_suppliers_pair` (`material_id`, `supplier_id`),
-  KEY `idx_materials_suppliers_supplier_id` (`supplier_id`),
-  CONSTRAINT `fk_materials_suppliers_material` FOREIGN KEY (`material_id`)
-    REFERENCES `materials` (`material_id`) ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT `fk_materials_suppliers_supplier` FOREIGN KEY (`supplier_id`)
-    REFERENCES `suppliers` (`supplier_id`) ON UPDATE CASCADE ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===========================================================================

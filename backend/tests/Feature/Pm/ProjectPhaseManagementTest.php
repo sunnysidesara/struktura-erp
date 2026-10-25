@@ -268,6 +268,25 @@ class ProjectPhaseManagementTest extends TestCase
         $this->assertSame('2026-03-01', $row->planned_end);
     }
 
+    public function test_phase_allocation_cannot_exceed_project_budgets(): void
+    {
+        $this->actingAsRole(Role::PROJECT_MANAGER, 1000, 'PM020001');
+
+        $this->postJson('/api/v1/pm/phases', [
+            'project_id' => 1,
+            'phase_name' => 'Over Budget Phase',
+            'sequence_no' => 2,
+            'project_cost' => 100000,
+            'materials_budget' => 0,
+            'equipment_budget' => 0,
+        ])->assertStatus(422)
+            ->assertJsonValidationErrors('project_cost')
+            ->assertJsonPath(
+                'errors.project_cost.0',
+                'Invalid: The set budget exceeds the allocated budget limit.',
+            );
+    }
+
     public function test_phase_deletion_is_blocked_by_tasks_and_started_status(): void
     {
         $this->actingAsRole(Role::PROJECT_MANAGER, 1000, 'PM020001');

@@ -61,6 +61,7 @@ export function TaskModal({
   const phaseWorkers = workers.filter(
     (worker) =>
       String(worker.phase_id ?? "") === phaseId &&
+      (worker.project == null || worker.project === project.project_name) &&
       worker.status === "Active" &&
       worker.employment_status === "Active",
   );

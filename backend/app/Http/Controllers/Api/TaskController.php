@@ -137,9 +137,11 @@ class TaskController extends Controller
      */
     public function updateStatus(Request $request, SiteTask $task): JsonResponse
     {
-        if (! in_array((int) $task->project_id, $this->projectIds($request, true), true)) {
+        $isSupervisor = $request->user()->role?->role_name === Role::SITE_SUPERVISOR;
+
+        if (! in_array((int) $task->project_id, $this->projectIds($request, $isSupervisor), true)) {
             return response()->json([
-                'message' => 'That task does not belong to your site.',
+                'message' => 'That task does not belong to your project.',
             ], 403);
         }
 
@@ -154,6 +156,18 @@ class TaskController extends Controller
             return response()->json([
                 'message' => 'Task status cannot move from '.$current.' to '.$data['status'].'.',
             ], 422);
+        }
+
+        if ($current === 'Pending' && $data['status'] === 'In Progress' && $task->phase_id) {
+            $phaseStatus = DB::table('project_phases')
+                ->where('phase_id', $task->phase_id)
+                ->value('status');
+
+            if ($phaseStatus !== 'In Progress') {
+                return response()->json([
+                    'message' => 'The Project Manager must start this phase before the task can begin.',
+                ], 422);
+            }
         }
 
         $task->update([
@@ -307,6 +321,7 @@ class TaskController extends Controller
                 't.assigned_laborer_id',
                 't.status',
                 'ph.project_name as phase_name',
+                'ph.status as phase_status',
                 'l.first_name',
                 'l.last_name',
                 'p.project_name'
@@ -325,6 +340,7 @@ class TaskController extends Controller
             'project' => $row->project_name,
             'phase_id' => $row->phase_id !== null ? (int) $row->phase_id : null,
             'phase' => $row->phase_name,
+            'phase_status' => $row->phase_status,
             'title' => $row->title,
             'date' => $row->task_date,
             'time' => $row->start_time ? substr((string) $row->start_time, 0, 5) : '',

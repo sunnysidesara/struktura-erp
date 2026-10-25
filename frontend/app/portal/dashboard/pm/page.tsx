@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   getPmDashboard,
+  getStoredUser,
   listPmSiteSupervisors,
   type PmDashboard,
   type PmProject,
@@ -15,7 +16,8 @@ import {
   SaPanel,
   SaTable,
   StatusBadge,
-  money,
+  Tabs,
+  formatDate,
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { usePmProject } from "./_components/projectSelection";
@@ -34,6 +36,7 @@ export default function ProjectManagerOverview() {
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState("");
   const [dashboardRefresh, setDashboardRefresh] = useState(0);
+  const [overviewTab, setOverviewTab] = useState<"projects" | "deadlines">("projects");
 
   // Needed by the create form to attach an active Site Supervisor.
   useEffect(() => {
@@ -108,12 +111,45 @@ export default function ProjectManagerOverview() {
     },
   ];
 
+  const deadlineColumns: SaColumn<PmProject>[] = [
+    { key: "code", label: "Project ID", render: (row) => row.code },
+    { key: "name", label: "Project", render: (row) => row.project_name },
+    { key: "deadline", label: "Deadline", render: (row) => row.deadline ? formatDate(row.deadline) : "-" },
+    {
+      key: "status",
+      label: "Status",
+      status: true,
+      render: (row) => <StatusBadge status={row.status} />,
+    },
+    {
+      key: "actions",
+      label: "Actions",
+      render: (row) => (
+        <div className={styles.actionCell}>
+          {row.project_id === selectedId ? (
+            <span className={pmStyles.selectedBadge}>Selected</span>
+          ) : (
+            <button
+              type="button"
+              className={styles.linkButton}
+              onClick={() => select(row.project_id)}
+            >
+              Select
+            </button>
+          )}
+        </div>
+      ),
+    },
+  ];
+
   const metrics = dashboard?.metrics;
-  const costs = dashboard?.costs;
+  const deadlines = dashboard?.deadlines ?? [];
+  const storedUser = getStoredUser();
+  const welcomeName = storedUser
+    ? `${storedUser.first_name} ${storedUser.last_name}`.trim()
+    : "Project Manager";
   const count = (value: number | undefined) =>
     dashboardLoading ? "..." : dashboard ? (value ?? 0) : "-";
-  const amount = (value: number | undefined) =>
-    dashboardLoading ? "..." : money(dashboard ? (value ?? 0) : 0);
 
   return (
     <SaPage
@@ -144,6 +180,17 @@ export default function ProjectManagerOverview() {
         <p className={pmStyles.noticeError}>{dashboardError}</p>
       ) : null}
 
+      <SaPanel title="Welcome">
+        <div className={pmStyles.welcomeBody}>
+          <p className={pmStyles.welcomeHead}>Welcome, {welcomeName}.</p>
+          <p className={pmStyles.welcomeText}>
+            Select one of your projects from the table below or from &ldquo;My Projects&rdquo; in the
+            header. Once a project is selected, the sidebar unlocks so you can open its phases,
+            finance, materials and equipment.
+          </p>
+        </div>
+      </SaPanel>
+
       <MetricGrid>
         <MetricCard
           label="Projects"
@@ -160,83 +207,39 @@ export default function ProjectManagerOverview() {
           note="Currently in progress"
         />
         <MetricCard
-          label="Assigned Workers"
-          value={count(metrics?.assigned_workers)}
-          note="Across your projects"
-        />
-        <MetricCard
           label="Open Phases"
           value={count(metrics?.open_phases)}
           note="Phases not yet completed"
         />
-        <MetricCard
-          label="Approved Budget"
-          value={amount(metrics?.approved_budget)}
-          note="Total approved"
-        />
-        <MetricCard
-          label="Remaining Budget"
-          value={amount(metrics?.remaining_budget)}
-          note="Available to spend"
-        />
-        <MetricCard
-          label="Utilization"
-          value={dashboardLoading ? "..." : `${metrics?.utilization ?? 0}%`}
-          note="Of approved budget"
-        />
       </MetricGrid>
 
-      <SaPanel title="Cost Breakdown">
-        <div className={pmStyles.breakdownList}>
-          <div className={pmStyles.breakdownRow}>
-            <div className={pmStyles.breakdownInfo}>
-              <p className={pmStyles.breakdownTitle}>Labour</p>
-              <p className={pmStyles.breakdownMeta}>Hours logged × hourly rate</p>
-            </div>
-            <strong>{amount(costs?.labor)}</strong>
-          </div>
-          <div className={pmStyles.breakdownRow}>
-            <div className={pmStyles.breakdownInfo}>
-              <p className={pmStyles.breakdownTitle}>Materials</p>
-              <p className={pmStyles.breakdownMeta}>Quantity used × unit cost</p>
-            </div>
-            <strong>{amount(costs?.materials)}</strong>
-          </div>
-          <div className={pmStyles.breakdownRow}>
-            <div className={pmStyles.breakdownInfo}>
-              <p className={pmStyles.breakdownTitle}>Equipment</p>
-              <p className={pmStyles.breakdownMeta}>Hours used × hourly rate</p>
-            </div>
-            <strong>{amount(costs?.equipment)}</strong>
-          </div>
-          <div className={pmStyles.breakdownRow}>
-            <div className={pmStyles.breakdownInfo}>
-              <p className={pmStyles.breakdownTitle}>Total</p>
-              <p className={pmStyles.breakdownMeta}>All recorded project costs</p>
-            </div>
-            <strong>{amount(costs?.total)}</strong>
-          </div>
-        </div>
-      </SaPanel>
+      <Tabs
+        items={[
+          { id: "projects", label: "My Projects" },
+          { id: "deadlines", label: "Upcoming Deadlines" },
+        ]}
+        active={overviewTab}
+        onChange={setOverviewTab}
+        label="Project overview views"
+      />
 
-      <SaPanel title="Welcome">
-        <div className={pmStyles.welcomeBody}>
-          <p className={pmStyles.welcomeHead}>Welcome back to your project workspace.</p>
-          <p className={pmStyles.welcomeText}>
-            Select one of your projects from the table below or from &ldquo;My Projects&rdquo; in the
-            header. Once a project is selected, the sidebar unlocks so you can open its phases,
-            finance, assignments, materials and equipment.
-          </p>
-        </div>
-      </SaPanel>
-
-      <SaPanel title={`My Projects (${projects.length})`}>
+      <SaPanel
+        title={
+          overviewTab === "projects"
+            ? `My Projects (${projects.length})`
+            : `Upcoming Deadlines (${deadlines.length})`
+        }
+      >
         <SaTable
-          columns={columns}
-          rows={projects}
-          loading={loading}
-          error={error}
-          emptyText="No project is assigned to you yet. Create one from the Project page."
+          columns={overviewTab === "projects" ? columns : deadlineColumns}
+          rows={overviewTab === "projects" ? projects : deadlines}
+          loading={overviewTab === "projects" ? loading : dashboardLoading}
+          error={overviewTab === "projects" ? error : dashboardError}
+          emptyText={
+            overviewTab === "projects"
+              ? "No project is assigned to you yet. Create one from the Project page."
+              : "No upcoming project deadlines."
+          }
           rowKey={(row) => row.project_id}
         />
       </SaPanel>

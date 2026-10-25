@@ -115,6 +115,22 @@ export function clearSession(): void {
   window.localStorage.removeItem(USER_KEY);
 }
 
+let redirectingToLogin = false;
+
+/**
+ * Drop a rejected token and return to the login screen. The guard keeps
+ * several parallel requests that all receive 401 from redirecting repeatedly.
+ */
+function handleUnauthorized(): void {
+  if (typeof window === "undefined" || redirectingToLogin) {
+    return;
+  }
+
+  redirectingToLogin = true;
+  clearSession();
+  window.location.replace("/portal?reason=session-expired");
+}
+
 // --- low-level fetch --------------------------------------------------------
 
 export class ApiError extends Error {
@@ -177,6 +193,10 @@ async function request<T>(
   };
 
   if (!response.ok) {
+    if (auth && response.status === 401) {
+      handleUnauthorized();
+    }
+
     throw new ApiError(
       data.message ?? "Something went wrong. Please try again.",
       response.status,
@@ -319,7 +339,6 @@ export type ApiPhase = { phase_id: number; project_id: number; project: string; 
 export type ApiAssignment = { assignment_id: number; first_name: string; last_name: string; project: string; phase: string; role_on_task: string | null; status: string | null; assigned_at: string | null; released_at: string | null; hourly_rate_ovveride: string | number | null };
 export type ApiEquipment = { equipment_id: number; equipment_name: string; equipment_type: string | null; hourly_rental_rate: string | number | null; equipment_status: string | null; usage_count?: number };
 export type ApiMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; usage_count?: number };
-export type ApiSupplier = { supplier_id: number; supplier_name: string; contact_name: string | null; contact_num: string | null; city: string | null; state_province: string | null; country: string | null };
 export type ApiAuditEvent = { audit_log_id: number; project_id: number; project_name: string | null; table_name: string; record_id: number; action_type: string; old_value: unknown; new_value: unknown; charge_at: string | null; id_number: string | null; first_name: string | null; last_name: string | null };
 export type ApiLoginAttempt = { id: number; ip_address: string | null; user_agent: string | null; status: "success" | "failed"; created_at: string | null; id_number: string | null; first_name: string | null; last_name: string | null };
 export type ApiRoleItem = { role_id: number; role_name: string; description: string | null };
@@ -402,7 +421,7 @@ export const getAdminDashboard = () => request<ApiDashboardData>("/admin/dashboa
 export const getAdminProjects = async () => (await request<{ data: ApiProject[] }>("/admin/projects")).data;
 export const getAdminPhases = async () => (await request<{ data: ApiPhase[] }>("/admin/phases")).data;
 export const getAdminAssignments = async () => (await request<{ data: ApiAssignment[] }>("/admin/assignments")).data;
-export const getAdminResources = () => request<{ equipment: ApiEquipment[]; materials: ApiMaterial[]; suppliers: ApiSupplier[] }>("/admin/resources");
+export const getAdminResources = () => request<{ equipment: ApiEquipment[]; materials: ApiMaterial[] }>("/admin/resources");
 export type ApiMaterialPayload = {
   material_name: string;
   unit_of_measure?: string | null;
@@ -450,6 +469,7 @@ export type PmTask = {
   project: string;
   phase_id: number | null;
   phase: string | null;
+  phase_status: string | null;
   title: string;
   date: string;
   time: string;
@@ -484,7 +504,7 @@ export type PmLaborerPayload = {
   date_hired?: string | null;
 };
 export type PmWorkforce = { available: PmLaborer[]; assigned: PmLaborer[]; skills: Record<string, string[]> };
-export type PmMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; supplier_name: string | null; used_quantity?: number };
+export type PmMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; used_quantity?: number };
 export type PmEquipment = { equipment_id: number; equipment_name: string; equipment_type: string | null; hourly_rental_rate: string | number | null; equipment_status: string | null; assigned_project: string | null; used_hours?: number };
 export type PmAssignment = { assignment_id: number; laborer_id: number; phase_id: number; first_name: string; last_name: string; project: string; phase: string; role_on_task: string | null; status: string | null; assigned_at: string | null; released_at: string | null; hourly_rate_ovveride: string | number | null };
 export type PmBudget = { project_id: number; project: string; approved: number; spent: number; remaining: number; utilization: number; materials_budget: number; materials_spent: number; materials_remaining: number; equipment_budget: number; equipment_spent: number; equipment_remaining: number };
@@ -776,6 +796,8 @@ export type SsSiteOption = {
 export type SsTask = {
   id: string;
   task_id: number;
+  phase_id: number | null;
+  phase_status: string | null;
   date: string;
   time: string;
   title: string;
@@ -842,6 +864,7 @@ export type SsMaterial = {
   name: string;
   unit: string | null;
   stock: number;
+  unit_cost: number;
 };
 
 export type SsEquipment = {
@@ -849,6 +872,7 @@ export type SsEquipment = {
   name: string;
   type: string | null;
   status: string | null;
+  hourly_rate: number;
 };
 
 export type SsSubmission = {
@@ -987,6 +1011,11 @@ export const getSsSchedule = (scope: "today" | "week" | "all", projectId?: numbe
   );
 export const updateSsTaskStatus = (taskId: number, status: string) =>
   request<SsWriteResponse>(`/ss/tasks/${taskId}/status`, {
+    method: "PUT",
+    body: { status },
+  });
+export const updatePmTaskStatus = (taskId: number, status: string) =>
+  request<SsWriteResponse>(`/pm/tasks/${taskId}/status`, {
     method: "PUT",
     body: { status },
   });

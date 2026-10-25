@@ -12,6 +12,7 @@ import {
   type PmLaborerPayload,
   type PmLaborerProfile,
 } from "@/lib/api";
+import { confirmDelete } from "@/lib/confirmDelete";
 import { FormModal, ModalField, ModalGrid } from "../_components/FormModal";
 import styles from "./LaborerModal.module.css";
 
@@ -111,6 +112,24 @@ export function LaborerModal({
 
     if (Object.keys(nextErrors).length > 0) {
       setFieldErrors(nextErrors);
+      return;
+    }
+
+    const removedSkillIds = persistedSkillIds.filter(
+      (skillId) => !selectedSkillIds.includes(skillId),
+    );
+    const removedSkillNames = removedSkillIds.map(
+      (skillId) =>
+        skills.find((skill) => skill.skill_id === skillId)?.skill_name ??
+        `skill #${skillId}`,
+    );
+
+    if (
+      removedSkillIds.length > 0 &&
+      !confirmDelete(
+        `Remove ${removedSkillNames.join(", ")} from ${firstName.trim()} ${lastName.trim()}?`,
+      )
+    ) {
       return;
     }
 

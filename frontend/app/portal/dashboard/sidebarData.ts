@@ -180,12 +180,6 @@ const pmSidebar: SidebarSection[] = [
       },
       {
         type: "link",
-        icon: "check-square",
-        label: "Assignments",
-        href: "/portal/dashboard/pm/assignments",
-      },
-      {
-        type: "link",
         icon: "package",
         label: "Materials",
         href: "/portal/dashboard/pm/materials",
@@ -215,12 +209,6 @@ const ssSidebar: SidebarSection[] = [
         icon: "map-pin",
         label: "Current Site Details",
         href: "/portal/dashboard/ss/site",
-      },
-      {
-        type: "link",
-        icon: "users",
-        label: "Workers",
-        href: "/portal/dashboard/ss/workers",
       },
       {
         type: "link",

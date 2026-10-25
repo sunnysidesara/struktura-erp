@@ -442,6 +442,12 @@ class PmController extends Controller
         // Spend already posted against the project must survive a budget edit.
         $spent = max(0.0, round($currentApproved - (float) $project->remaining_budget, 2));
 
+        if (round($approved, 2) < round($spent, 2)) {
+            throw ValidationException::withMessages([
+                'approved_budget' => ['Invalid: The set budget is below the amount already spent.'],
+            ]);
+        }
+
         $project->update([
             'project_name' => $data['project_name'],
             'client_name' => $data['client_name'] ?? null,
@@ -618,7 +624,46 @@ class PmController extends Controller
     {
         if (round($materials + $equipment, 2) > round($approved, 2)) {
             throw ValidationException::withMessages([
-                'materials_budget' => ['Materials plus equipment allocation cannot exceed the total budget.'],
+                'materials_budget' => ['Invalid: The set budget exceeds the allocated budget limit.'],
+            ]);
+        }
+    }
+
+    /**
+     * Phase budgets cannot collectively exceed the project's allocations.
+     */
+    private function assertPhaseAllocations(
+        Project $project,
+        array $data,
+        ?ProjectPhase $phase = null,
+    ): void {
+        $otherPhases = DB::table('project_phases')
+            ->where('project_id', $project->project_id)
+            ->when($phase, fn ($query) => $query->where('phase_id', '!=', $phase->phase_id))
+            ->selectRaw(
+                'COALESCE(SUM(project_cost), 0) as cost, '
+                .'COALESCE(SUM(materials_budget), 0) as materials, '
+                .'COALESCE(SUM(equipment_budget), 0) as equipment'
+            )
+            ->first();
+
+        $cost = array_key_exists('project_cost', $data)
+            ? (float) ($data['project_cost'] ?? 0)
+            : (float) ($phase?->project_cost ?? 0);
+        $materials = array_key_exists('materials_budget', $data)
+            ? (float) ($data['materials_budget'] ?? 0)
+            : (float) ($phase?->materials_budget ?? 0);
+        $equipment = array_key_exists('equipment_budget', $data)
+            ? (float) ($data['equipment_budget'] ?? 0)
+            : (float) ($phase?->equipment_budget ?? 0);
+
+        if (
+            round((float) $otherPhases->cost + $cost, 2) > round((float) $project->approved_budget, 2)
+            || round((float) $otherPhases->materials + $materials, 2) > round((float) $project->materials_budget, 2)
+            || round((float) $otherPhases->equipment + $equipment, 2) > round((float) $project->equipment_budget, 2)
+        ) {
+            throw ValidationException::withMessages([
+                'project_cost' => ['Invalid: The set budget exceeds the allocated budget limit.'],
             ]);
         }
     }
@@ -712,6 +757,7 @@ class PmController extends Controller
 
         $project = Project::findOrFail($projectId);
         $this->assertPhaseDates($data, $project);
+        $this->assertPhaseAllocations($project, $data);
 
         // Eloquent (not the query builder) so the audit observer fires.
         $phase = ProjectPhase::create([
@@ -1059,7 +1105,9 @@ class PmController extends Controller
 
         $data = $this->validatePhase($request);
         $model = ProjectPhase::findOrFail($phase);
-        $this->assertPhaseDates($data, Project::findOrFail($model->project_id), $model);
+        $project = Project::findOrFail($model->project_id);
+        $this->assertPhaseDates($data, $project, $model);
+        $this->assertPhaseAllocations($project, $data, $model);
 
         $model->update([
             'project_name' => $data['phase_name'],
@@ -1341,18 +1389,14 @@ class PmController extends Controller
         }
 
         $materials = DB::table('materials as m')
-            ->leftJoin('materials_suppliers as ms', 'ms.material_id', '=', 'm.material_id')
-            ->leftJoin('suppliers as s', 's.supplier_id', '=', 'ms.supplier_id')
             ->whereIn('m.material_id', $used->keys()->all())
             ->select(
                 'm.material_id',
                 'm.material_name',
                 'm.unit_of_measure',
                 'm.unit_cost',
-                'm.stock_quantity',
-                DB::raw('MIN(s.supplier_name) as supplier_name')
+                'm.stock_quantity'
             )
-            ->groupBy('m.material_id', 'm.material_name', 'm.unit_of_measure', 'm.unit_cost', 'm.stock_quantity')
             ->orderBy('m.material_name')
             ->get()
             ->map(fn ($row) => [
@@ -1361,7 +1405,6 @@ class PmController extends Controller
                 'unit_of_measure' => $row->unit_of_measure,
                 'unit_cost' => (float) $row->unit_cost,
                 'stock_quantity' => (int) $row->stock_quantity,
-                'supplier_name' => $row->supplier_name,
                 'used_quantity' => (float) ($used[$row->material_id] ?? 0),
             ])
             ->values();
