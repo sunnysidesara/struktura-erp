@@ -7,7 +7,6 @@ use App\Models\EquipmentUsage;
 use App\Models\LaborHourLog;
 use App\Models\Material;
 use App\Models\MaterialUsage;
-use App\Models\Project;
 use App\Models\ProjectPhase;
 use App\Models\Role;
 use Illuminate\Http\JsonResponse;
@@ -83,6 +82,16 @@ class SsController extends Controller
     }
 
     /**
+     * A phase-specific assignment rate wins over the laborer's base rate.
+     */
+    private function rateForAssignment(object $assignment): float
+    {
+        return $assignment->hourly_rate_ovveride !== null
+            ? (float) $assignment->hourly_rate_ovveride
+            : (float) $assignment->hourly_rate;
+    }
+
+    /**
      * One labor entry per worker, per phase, per day.
      */
     private function laborLogExists(int $laborerId, int $phaseId, string $date, ?int $exceptLogId = null, ?string $shift = null): bool
@@ -95,23 +104,6 @@ class SsController extends Controller
             ->when($shift !== null, fn ($query) => $query->where('lhl.shift', $shift))
             ->when($exceptLogId !== null, fn ($query) => $query->where('lhl.log_id', '!=', $exceptLogId))
             ->exists();
-    }
-
-    /**
-     * Move a project's remaining budget (negative = spend, positive = refund).
-     * Uses the Project model so the AuditObserver records every change.
-     */
-    private function adjustProjectBudget(int $projectId, float $amount): void
-    {
-        $project = Project::query()->lockForUpdate()->find($projectId);
-
-        if (! $project) {
-            return;
-        }
-
-        $project->update([
-            'remaining_budget' => round((float) $project->remaining_budget + $amount, 2),
-        ]);
     }
 
     /**
@@ -494,6 +486,7 @@ class SsController extends Controller
         $laborers = DB::table('laborer as l')
             ->join('workforce_assignment as wa', 'wa.laborer_id', '=', 'l.laborer_id')
             ->whereIn('wa.phase_id', $phaseIds)
+            ->where('wa.status', 'Active')
             ->select('l.laborer_id', 'l.first_name', 'l.last_name', 'l.employment_status', 'l.contact_number')
             ->distinct()
             ->orderBy('l.laborer_id')
@@ -623,6 +616,7 @@ class SsController extends Controller
                 'lhl.time_out',
                 'lhl.regular_hours',
                 'lhl.overtime_hours',
+                'lhl.computed_cost',
                 'l.first_name',
                 'l.last_name',
                 'ph.phase_id',
@@ -643,6 +637,7 @@ class SsController extends Controller
                 'regular' => (float) $row->regular_hours,
                 'overtime' => (float) $row->overtime_hours,
                 'total' => (float) $row->regular_hours + (float) $row->overtime_hours,
+                'expense' => round((float) ($row->computed_cost ?? 0), 2),
                 'phase_id' => (int) $row->phase_id,
                 'phase' => $row->phase_name,
                 'project_id' => (int) $row->project_id,
@@ -1223,6 +1218,30 @@ class SsController extends Controller
             return response()->json(['message' => 'This phase is already completed.'], 422);
         }
 
+        if ($phase->status !== 'In Progress') {
+            return response()->json([
+                'message' => 'The Project Manager must start this phase before completion can be requested.',
+            ], 422);
+        }
+
+        $totalTasks = DB::table('site_task')->where('phase_id', $id)->count();
+        $openTasks = DB::table('site_task')
+            ->where('phase_id', $id)
+            ->where('status', '!=', 'Done')
+            ->count();
+
+        if ($totalTasks === 0) {
+            return response()->json([
+                'message' => 'Add at least one task before requesting phase completion.',
+            ], 422);
+        }
+
+        if ($openTasks > 0) {
+            return response()->json([
+                'message' => 'Complete all phase tasks before requesting completion.',
+            ], 422);
+        }
+
         $model = ProjectPhase::query()->find($id);
 
         if (! $model) {
@@ -1384,13 +1403,9 @@ class SsController extends Controller
             ], 422);
         }
 
-        $rate = $assignment->hourly_rate_ovveride !== null
-            ? (float) $assignment->hourly_rate_ovveride
-            : (float) $assignment->hourly_rate;
+        $rate = $this->rateForAssignment($assignment);
 
-        $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
-
-        $logId = DB::transaction(function () use ($data, $shift, $timeIn, $timeOut, $regular, $overtime, $cost, $assignment, $request) {
+        $logId = DB::transaction(function () use ($data, $shift, $timeIn, $timeOut, $regular, $overtime, $rate, $assignment, $request) {
             $log = LaborHourLog::create([
                 'assignment_id' => $assignment->assignment_id,
                 'log_date' => $data['log_date'],
@@ -1399,13 +1414,10 @@ class SsController extends Controller
                 'time_out' => $timeOut,
                 'regular_hours' => $regular,
                 'overtime_hours' => $overtime,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => $rate,
                 'created_by' => $request->user()->user_id,
                 'created_at' => now(),
             ]);
-
-            // Audited through the Project model.
-            $this->adjustProjectBudget((int) $assignment->project_id, -$cost);
 
             return $log->log_id;
         });
@@ -1497,16 +1509,9 @@ class SsController extends Controller
             ], 422);
         }
 
-        $rate = $assignment->hourly_rate_ovveride !== null
-            ? (float) $assignment->hourly_rate_ovveride
-            : (float) $assignment->hourly_rate;
+        $rate = $this->rateForAssignment($assignment);
 
-        $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
-
-        DB::transaction(function () use ($log, $assignment, $original, $data, $shift, $timeIn, $timeOut, $regular, $overtime, $cost) {
-            // Refund the old charge, then charge the corrected one.
-            $this->adjustProjectBudget((int) $original->project_id, (float) $log->computed_cost);
-
+        DB::transaction(function () use ($log, $assignment, $data, $shift, $timeIn, $timeOut, $regular, $overtime, $rate) {
             $log->update([
                 'assignment_id' => $assignment->assignment_id,
                 'log_date' => $data['log_date'],
@@ -1515,10 +1520,8 @@ class SsController extends Controller
                 'time_out' => $timeOut,
                 'regular_hours' => $regular,
                 'overtime_hours' => $overtime,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => $rate,
             ]);
-
-            $this->adjustProjectBudget((int) $assignment->project_id, -$cost);
         });
 
         return response()->json([
@@ -1550,11 +1553,8 @@ class SsController extends Controller
             return response()->json(['message' => 'You can only void logs from your own site.'], 403);
         }
 
-        DB::transaction(function () use ($log, $assignment) {
-            $refund = (float) $log->computed_cost;
-
+        DB::transaction(function () use ($log) {
             $log->delete();
-            $this->adjustProjectBudget((int) $assignment->project_id, $refund);
         });
 
         return response()->json(['message' => 'Labor log voided and the budget refunded.']);
@@ -1589,21 +1589,18 @@ class SsController extends Controller
             ], 422);
         }
 
-        $cost = round($quantity * (float) $material->unit_cost, 2);
-
-        $usageId = DB::transaction(function () use ($data, $quantity, $cost, $phase, $material, $request) {
+        DB::transaction(function () use ($data, $quantity, $phase, $material, $request) {
             $usage = MaterialUsage::create([
                 'material_id' => $material->material_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'quantity_used' => $quantity,
-                'computed_cost' => $cost,
+                'unit_cost_at_use' => (float) $material->unit_cost,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
 
             $this->adjustMaterialStock((int) $material->material_id, -$quantity);
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
 
             return $usage->material_usage_id;
         });
@@ -1667,23 +1664,19 @@ class SsController extends Controller
             ], 422);
         }
 
-        $cost = round($quantity * (float) $material->unit_cost, 2);
-
-        DB::transaction(function () use ($usage, $originalPhase, $phase, $materialId, $data, $quantity, $cost) {
+        DB::transaction(function () use ($usage, $phase, $materialId, $material, $data, $quantity) {
             // Put the previous entry back, then apply the corrected one.
             $this->adjustMaterialStock((int) $usage->material_id, (float) $usage->quantity_used);
-            $this->adjustProjectBudget((int) $originalPhase->project_id, (float) $usage->computed_cost);
 
             $usage->update([
                 'material_id' => $materialId,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'quantity_used' => $quantity,
-                'computed_cost' => $cost,
+                'unit_cost_at_use' => (float) $material->unit_cost,
             ]);
 
             $this->adjustMaterialStock($materialId, -$quantity);
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
         });
 
         return response()->json([
@@ -1714,12 +1707,10 @@ class SsController extends Controller
             return response()->json(['message' => 'You can only void logs from your own site.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
+        DB::transaction(function () use ($usage) {
             $this->adjustMaterialStock((int) $usage->material_id, (float) $usage->quantity_used);
-            $refund = (float) $usage->computed_cost;
 
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json([
@@ -1749,21 +1740,23 @@ class SsController extends Controller
             return response()->json(['message' => 'Unknown equipment.'], 422);
         }
 
-        $hours = round((float) $data['hours_used'], 2);
-        $cost = round($hours * (float) $equipment->hourly_rental_rate, 2);
+        if ($equipment->equipment_status === 'Under Maintenance') {
+            return response()->json([
+                'message' => 'This equipment is under maintenance and cannot be used.',
+            ], 422);
+        }
 
-        $usageId = DB::transaction(function () use ($data, $hours, $cost, $phase, $equipment, $request) {
+        $hours = round((float) $data['hours_used'], 2);
+        DB::transaction(function () use ($data, $hours, $phase, $equipment, $request) {
             $usage = EquipmentUsage::create([
                 'equipment_id' => $equipment->equipment_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'hours_used' => $hours,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => (float) $equipment->hourly_rental_rate,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
-
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
 
             return $usage->equipment_usage_id;
         });
@@ -1818,21 +1811,21 @@ class SsController extends Controller
             return response()->json(['message' => 'Unknown equipment.'], 422);
         }
 
+        if ($equipment->equipment_status === 'Under Maintenance') {
+            return response()->json([
+                'message' => 'This equipment is under maintenance and cannot be used.',
+            ], 422);
+        }
+
         $hours = round((float) $data['hours_used'], 2);
-        $cost = round($hours * (float) $equipment->hourly_rental_rate, 2);
-
-        DB::transaction(function () use ($usage, $originalPhase, $phase, $equipmentId, $data, $hours, $cost) {
-            $this->adjustProjectBudget((int) $originalPhase->project_id, (float) $usage->computed_cost);
-
+        DB::transaction(function () use ($usage, $phase, $equipmentId, $equipment, $data, $hours) {
             $usage->update([
                 'equipment_id' => $equipmentId,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'hours_used' => $hours,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => (float) $equipment->hourly_rental_rate,
             ]);
-
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
         });
 
         return response()->json([
@@ -1862,11 +1855,8 @@ class SsController extends Controller
             return response()->json(['message' => 'You can only void logs from your own site.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
-            $refund = (float) $usage->computed_cost;
-
+        DB::transaction(function () use ($usage) {
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json(['message' => 'Equipment log voided and the budget refunded.']);

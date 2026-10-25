@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { SsSiteOption } from "@/lib/api";
+import { getSsDashboard, type SsSiteOption } from "@/lib/api";
 import {
+  MetricCard,
+  MetricGrid,
   SaPage,
   SaPanel,
   SaTable,
@@ -11,12 +13,14 @@ import {
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { ProgressBar } from "./_components/SsReport";
 import { selectSsSite, useSsSite } from "./_components/siteSelection";
+import { useSsResource } from "./_components/useSsResource";
 import styles from "../sa/page.module.css";
 import ssStyles from "./ss.module.css";
 
 export default function SiteSupervisorOverview() {
   const router = useRouter();
-  const { sites, selected, loading, error } = useSsSite();
+  const { sites, selectedId, selected, loading, error } = useSsSite();
+  const dashboard = useSsResource(() => getSsDashboard(selectedId), selectedId);
 
   const openSite = (site: SsSiteOption) => {
     selectSsSite(site.project_id);
@@ -56,6 +60,73 @@ export default function SiteSupervisorOverview() {
           : "Every site assigned to you with its current progress."
       }
     >
+      {!selectedId ? (
+        <SaPanel title="Today at a glance">
+          <p className={ssStyles.muted}>
+            Select a site from &ldquo;My Sites&rdquo; in the header to see today&apos;s
+            labour hours, material entries, equipment hours and phase totals.
+          </p>
+        </SaPanel>
+      ) : (
+        <>
+          {dashboard.error !== "" ? (
+            <p className={ssStyles.noticeError}>{dashboard.error}</p>
+          ) : null}
+
+          <MetricGrid>
+            <MetricCard
+              label="Labor Hours Today"
+              value={
+                dashboard.loading
+                  ? "..."
+                  : (dashboard.data?.metrics.labor_hours_today ?? 0)
+              }
+              note="Hours logged today"
+            />
+            <MetricCard
+              label="Material Entries Today"
+              value={
+                dashboard.loading
+                  ? "..."
+                  : (dashboard.data?.metrics.material_entries_today ?? 0)
+              }
+              note="Usage records today"
+            />
+            <MetricCard
+              label="Equipment Hours Today"
+              value={
+                dashboard.loading
+                  ? "..."
+                  : (dashboard.data?.metrics.equipment_hours_today ?? 0)
+              }
+              note="Equipment usage today"
+            />
+            <MetricCard
+              label="Active Phases"
+              value={
+                dashboard.loading
+                  ? "..."
+                  : (dashboard.data?.metrics.active_phases ?? 0)
+              }
+              note={
+                dashboard.loading
+                  ? "Loading..."
+                  : `${dashboard.data?.metrics.total_phases ?? 0} total phases`
+              }
+            />
+            <MetricCard
+              label="Total Phases"
+              value={
+                dashboard.loading
+                  ? "..."
+                  : (dashboard.data?.metrics.total_phases ?? 0)
+              }
+              note="Across this site"
+            />
+          </MetricGrid>
+        </>
+      )}
+
       <SaPanel title="Welcome">
         <div className={ssStyles.welcomeBody}>
           <p className={ssStyles.welcomeHead}>Welcome back to your sites.</p>

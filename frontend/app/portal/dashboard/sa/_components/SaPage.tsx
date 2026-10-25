@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import styles from "../page.module.css";
 
 export function SaPage({ kicker, title, subtitle, actions, children }: { kicker: string; title: string; subtitle?: string; actions?: ReactNode; children: ReactNode }) {
@@ -176,6 +176,7 @@ export function useApiData<T>(loader: () => Promise<T>) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -187,7 +188,12 @@ export function useApiData<T>(loader: () => Promise<T>) {
 
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version]);
+
+  const reload = useCallback(() => {
+    setLoading(true);
+    setVersion((value) => value + 1);
   }, []);
 
-  return { data, loading, error };
+  return { data, loading, error, reload };
 }

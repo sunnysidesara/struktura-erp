@@ -87,7 +87,7 @@ export function PhasesDetail() {
 
           {row.status === "Completed" ? null : row.completionRequestedAt ? (
             <span className={ssStyles.requestedBadge}>Requested</span>
-          ) : (
+          ) : row.status === "In Progress" && row.progress === 100 ? (
             <button
               type="button"
               className={styles.linkButtonAlt}
@@ -96,6 +96,10 @@ export function PhasesDetail() {
             >
               {requesting === row.phase_id ? "Sending..." : "Request Completion"}
             </button>
+          ) : (
+            <span className={ssStyles.requestHint}>
+              {row.status === "Not Started" ? "Awaiting PM start" : "Complete all tasks first"}
+            </span>
           )}
         </div>
       ),

@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   createSsLaborLog,
+  deleteSsLaborLog,
   getSsLogHours,
   getSsPhases,
+  updateSsLaborLog,
   type SsLaborLog,
 } from "@/lib/api";
 import { SaPanel, SaTable, Tabs, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
@@ -16,6 +18,7 @@ import {
   SubmitButton,
 } from "../_components/SsReport";
 import { useSsResource } from "../_components/useSsResource";
+import styles from "../../sa/page.module.css";
 import ssStyles from "../ss.module.css";
 
 type Notice = { type: "success" | "error"; message: string } | null;
@@ -51,6 +54,8 @@ export function LaborTab({ projectId }: { projectId: number }) {
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [saving, setSaving] = useState(false);
+  const [editingLog, setEditingLog] = useState<SsLaborLog | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     if (data?.server_date && date === "") {
@@ -73,19 +78,40 @@ export function LaborTab({ projectId }: { projectId: number }) {
   );
 
   // Workers on the chosen phase (all active workers when no phase is picked).
-  const workerOptions = useMemo(
-    () =>
+  const workerOptions = useMemo(() => {
+    const options =
       formPhase === ""
         ? assignments
-        : assignments.filter((row) => String(row.phase_id) === formPhase),
-    [assignments, formPhase],
-  );
+        : assignments.filter((row) => String(row.phase_id) === formPhase);
+
+    // Keep a historical assignment selectable even after it has been released.
+    if (
+      editingLog &&
+      !options.some((row) => row.assignment_id === editingLog.assignment_id)
+    ) {
+      return [
+        {
+          assignment_id: editingLog.assignment_id,
+          laborer_id: 0,
+          worker: editingLog.worker,
+          phase_id: editingLog.phase_id,
+          phase: editingLog.phase,
+          role_on_task: null,
+          status: "Active",
+        },
+        ...options,
+      ];
+    }
+
+    return options;
+  }, [assignments, editingLog, formPhase]);
 
   const selectedAssignment =
-    assignments.find((row) => String(row.assignment_id) === assignmentId) ?? null;
-  const workerId = selectedAssignment
-    ? `LAB-${String(selectedAssignment.laborer_id).padStart(4, "0")}`
-    : "";
+    workerOptions.find((row) => String(row.assignment_id) === assignmentId) ?? null;
+  const workerId =
+    selectedAssignment && selectedAssignment.laborer_id > 0
+      ? `LAB-${String(selectedAssignment.laborer_id).padStart(4, "0")}`
+      : "";
 
   // Date + shift + phase are applied together in the history table.
   const visible = useMemo(
@@ -132,16 +158,25 @@ export function LaborTab({ projectId }: { projectId: number }) {
     }
 
     setSaving(true);
+    const wasEditing = editingLog !== null;
+
     try {
-      const result = await createSsLaborLog({
+      const body = {
         assignment_id: Number(assignmentId),
         log_date: date,
         shift,
         time_in: timeIn,
         time_out: timeOut,
-      });
+      };
+      const result = wasEditing
+        ? await updateSsLaborLog(editingLog.log_id, {
+            ...body,
+            overtime_hours: editingLog.overtime,
+          })
+        : await createSsLaborLog(body);
 
       setNotice({ type: "success", message: result.message });
+      setEditingLog(null);
       resetForm();
       reload();
       setTab("history");
@@ -152,7 +187,56 @@ export function LaborTab({ projectId }: { projectId: number }) {
     }
   }
 
-  // Five read-only columns: worker, phase, shift, times, total hours.
+  function startEdit(row: SsLaborLog) {
+    setEditingLog(row);
+    setAssignmentId(String(row.assignment_id));
+    setFormPhase(String(row.phase_id));
+    setDate(String(row.date).slice(0, 10));
+    setShift(row.shift);
+    setTimeIn((row.time_in ?? "08:00").slice(0, 5));
+    setTimeOut((row.time_out ?? "17:00").slice(0, 5));
+    setFormError("");
+    setNotice(null);
+    setTab("add");
+  }
+
+  function cancelEdit() {
+    setEditingLog(null);
+    resetForm();
+    setTab("history");
+  }
+
+  async function handleDelete(row: SsLaborLog) {
+    if (
+      !window.confirm(
+        `Void the labor log for ${row.worker} on ${row.date}? The project budget will be refunded.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(row.log_id);
+    setNotice(null);
+
+    try {
+      const result = await deleteSsLaborLog(row.log_id);
+      setNotice({ type: "success", message: result.message });
+      if (editingLog?.log_id === row.log_id) {
+        setEditingLog(null);
+        resetForm();
+      }
+      reload();
+    } catch (err) {
+      setNotice({
+        type: "error",
+        message: err instanceof Error ? err.message : "Could not delete the labor log.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  // Five read-only columns plus row actions.
   const columns: SaColumn<SsLaborLog>[] = [
     { key: "worker", label: "Worker Name", render: (row) => row.worker },
     { key: "phase", label: "Phase", render: (row) => row.phase ?? "-" },
@@ -163,6 +247,25 @@ export function LaborTab({ projectId }: { projectId: number }) {
       render: (row) => `${row.time_in ?? "-"} - ${row.time_out ?? "-"}`,
     },
     { key: "hours", label: "Total Hours", render: (row) => `${row.total} h` },
+    {
+      key: "actions",
+      label: "Actions",
+      render: (row) => (
+        <div className={styles.actionCell}>
+          <button type="button" className={styles.linkButton} onClick={() => startEdit(row)}>
+            Edit
+          </button>
+          <button
+            type="button"
+            className={styles.linkButtonAlt}
+            onClick={() => handleDelete(row)}
+            disabled={deletingId !== null}
+          >
+            {deletingId === row.log_id ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -176,8 +279,8 @@ export function LaborTab({ projectId }: { projectId: number }) {
       ) : null}
 
       {tab === "add" ? (
-        <SaPanel title="Add log for today">
-          {assignments.length === 0 && !loading ? (
+        <SaPanel title={editingLog ? "Edit worker log" : "Add log for today"}>
+          {!editingLog && assignments.length === 0 && !loading ? (
             <p className={ssStyles.notice}>
               No active worker is assigned to this site yet. Ask your Project Manager to assign a
               worker to a phase, then the dropdown below will populate.
@@ -196,7 +299,7 @@ export function LaborTab({ projectId }: { projectId: number }) {
                     setFormPhase(String(match.phase_id));
                   }
                 }}
-                disabled={assignments.length === 0}
+                disabled={workerOptions.length === 0}
                 required
               >
                 <option value="">
@@ -261,6 +364,12 @@ export function LaborTab({ projectId }: { projectId: number }) {
                 }}
               >
                 <option value="">All phases</option>
+                {editingLog &&
+                !sitePhases.some((phase) => phase.phase_id === editingLog.phase_id) ? (
+                  <option value={editingLog.phase_id}>
+                    {editingLog.phase ?? `Phase ${editingLog.phase_id}`}
+                  </option>
+                ) : null}
                 {sitePhases.map((phase) => (
                   <option key={phase.phase_id} value={phase.phase_id}>
                     {phase.sequence}. {phase.name}
@@ -271,7 +380,19 @@ export function LaborTab({ projectId }: { projectId: number }) {
 
             {formError !== "" ? <ErrorNote>{formError}</ErrorNote> : null}
             <FormActions>
-              <SubmitButton>{saving ? "Saving..." : "Save Log"}</SubmitButton>
+              {editingLog ? (
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={cancelEdit}
+                  disabled={saving}
+                >
+                  Cancel edit
+                </button>
+              ) : null}
+              <SubmitButton>
+                {saving ? "Saving..." : editingLog ? "Update Log" : "Save Log"}
+              </SubmitButton>
             </FormActions>
           </FormShell>
         </SaPanel>

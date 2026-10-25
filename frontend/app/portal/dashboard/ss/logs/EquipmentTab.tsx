@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { createSsEquipmentUsage, getSsEquipment, type SsEquipmentLog } from "@/lib/api";
+import { createSsEquipmentUsage, deleteSsEquipmentUsage, getSsEquipment, updateSsEquipmentUsage, type SsEquipmentLog } from "@/lib/api";
 import { SaPanel, SaTable, Tabs, money, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 import {
   ErrorNote,
@@ -12,6 +12,7 @@ import {
   SubmitButton,
 } from "../_components/SsReport";
 import { useSsResource } from "../_components/useSsResource";
+import styles from "../../sa/page.module.css";
 import ssStyles from "../ss.module.css";
 
 type Notice = { type: "success" | "error"; message: string } | null;
@@ -39,6 +40,8 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [saving, setSaving] = useState(false);
+  const [editingLog, setEditingLog] = useState<SsEquipmentLog | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
     if (data?.server_date && date === "") {
@@ -104,17 +107,24 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
     }
 
     setSaving(true);
+    const wasEditing = editingLog !== null;
+
     try {
-      const result = await createSsEquipmentUsage({
+      const body = {
         equipment_id: Number(equipmentId),
         phase_id: Number(phaseId),
         usage_date: date,
         hours_used: value,
-      });
+      };
+      const result = wasEditing
+        ? await updateSsEquipmentUsage(editingLog.usage_id, body)
+        : await createSsEquipmentUsage(body);
 
       setNotice({ type: "success", message: result.message });
+      setEditingLog(null);
       setHours("");
       reload();
+      if (wasEditing) setTab("usage");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not save the equipment usage.");
     } finally {
@@ -122,13 +132,80 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
     }
   }
 
-  // Exactly five columns: the supervisor sees the log total, never the hourly rate.
+  function startEdit(row: SsEquipmentLog) {
+    setEditingLog(row);
+    setEquipmentId(String(row.equipment_id));
+    setPhaseId(String(row.phase_id));
+    setDate(String(row.date).slice(0, 10));
+    setHours(String(row.hours));
+    setFormError("");
+    setNotice(null);
+    setTab("log");
+  }
+
+  function cancelEdit() {
+    setEditingLog(null);
+    setHours("");
+    setFormError("");
+    setTab("usage");
+  }
+
+  async function handleDelete(row: SsEquipmentLog) {
+    if (
+      !window.confirm(
+        `Void the equipment log for ${row.equipment} on ${row.date}? The project budget will be refunded.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(row.usage_id);
+    setNotice(null);
+
+    try {
+      const result = await deleteSsEquipmentUsage(row.usage_id);
+      setNotice({ type: "success", message: result.message });
+      if (editingLog?.usage_id === row.usage_id) {
+        setEditingLog(null);
+        setHours("");
+      }
+      reload();
+    } catch (err) {
+      setNotice({
+        type: "error",
+        message: err instanceof Error ? err.message : "Could not delete the equipment usage.",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  // Five read-only columns plus row actions.
   const columns: SaColumn<SsEquipmentLog>[] = [
     { key: "date", label: "Date", render: (row) => row.date },
     { key: "equipment", label: "Equipment", render: (row) => row.equipment },
     { key: "hours", label: "Hours", render: (row) => `${row.hours} h` },
     { key: "phase", label: "Phase", render: (row) => row.phase ?? "-" },
     { key: "expense", label: "Expense", render: (row) => money(row.expense) },
+    {
+      key: "actions",
+      label: "Actions",
+      render: (row) => (
+        <div className={styles.actionCell}>
+          <button type="button" className={styles.linkButton} onClick={() => startEdit(row)}>
+            Edit
+          </button>
+          <button
+            type="button"
+            className={styles.linkButtonAlt}
+            onClick={() => handleDelete(row)}
+            disabled={deletingId !== null}
+          >
+            {deletingId === row.usage_id ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -199,7 +276,7 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
           />
         </SaPanel>
       ) : (
-        <SaPanel title="Log today's equipment usage">
+        <SaPanel title={editingLog ? "Edit equipment usage" : "Log today's equipment usage"}>
           {loading ? (
             <p className={ssStyles.muted}>Loading equipment...</p>
           ) : phases.length === 0 ? (
@@ -258,7 +335,23 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
               ) : null}
               {formError !== "" ? <ErrorNote>{formError}</ErrorNote> : null}
               <FormActions>
-                <SubmitButton>{saving ? "Saving..." : "Record equipment usage"}</SubmitButton>
+                {editingLog ? (
+                  <button
+                    type="button"
+                    className={styles.linkButton}
+                    onClick={cancelEdit}
+                    disabled={saving}
+                  >
+                    Cancel edit
+                  </button>
+                ) : null}
+                <SubmitButton>
+                  {saving
+                    ? "Saving..."
+                    : editingLog
+                      ? "Update usage"
+                      : "Record equipment usage"}
+                </SubmitButton>
               </FormActions>
             </FormShell>
           )}

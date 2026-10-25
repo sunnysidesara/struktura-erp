@@ -10,8 +10,6 @@ import {
 } from "@/lib/api";
 import { FormModal, ModalField, ModalGrid } from "../_components/FormModal";
 
-export const PROJECT_STATUSES = ["Not Started", "On Track", "Delayed", "On Hold", "Completed"];
-
 type Values = {
   name: string;
   client: string;
@@ -22,7 +20,6 @@ type Values = {
   budget: string;
   materials: string;
   equipment: string;
-  status: string;
 };
 
 const EMPTY: Values = {
@@ -35,7 +32,6 @@ const EMPTY: Values = {
   budget: "",
   materials: "",
   equipment: "",
-  status: "On Track",
 };
 
 function dateOnly(value: string | null | undefined): string {
@@ -83,7 +79,6 @@ export function ProjectModal({
             budget: String(project.approved_budget ?? ""),
             materials: String(project.materials_budget ?? ""),
             equipment: String(project.equipment_budget ?? ""),
-            status: project.status ?? "On Track",
           }
         : EMPTY,
     );
@@ -153,7 +148,6 @@ export function ProjectModal({
       location: values.location.trim() || null,
       start_date: values.start || null,
       end_date: values.end || null,
-      status: values.status,
       site_supervisor_id: Number(values.supervisorId),
       // All three budget figures are PM-owned and editable at any time.
       approved_budget: budget,
@@ -324,20 +318,6 @@ export function ProjectModal({
           />
         </ModalField>
       </ModalGrid>
-
-      <ModalField label="Status" htmlFor="project-status">
-        <select
-          id="project-status"
-          value={values.status}
-          onChange={(event) => update("status", event.target.value)}
-        >
-          {PROJECT_STATUSES.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
-      </ModalField>
     </FormModal>
   );
 }

@@ -3,12 +3,23 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Equipment;
+use App\Models\Material;
+use App\Support\ProjectBudget;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
+    private const EQUIPMENT_STATUSES = ['Available', 'In Use', 'Under Maintenance'];
+    private const EQUIPMENT_TRANSITIONS = [
+        'Available' => ['In Use', 'Under Maintenance'],
+        'In Use' => ['Available', 'Under Maintenance'],
+        'Under Maintenance' => ['Available'],
+    ];
+
     public function dashboard(): JsonResponse
     {
         $roleCounts = DB::table('users')
@@ -83,6 +94,49 @@ class AdminController extends Controller
             ->orderBy('p.project_id')
             ->get();
 
+        $ids = $projects->pluck('project_id')->all();
+
+        // Recorded costs from the three usage streams (one row per project).
+        $laborCosts = empty($ids) ? collect() : DB::table('labor_hour_log as lhl')
+            ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'lhl.assignment_id')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->groupBy('ph.project_id')
+            ->select('ph.project_id', DB::raw('SUM(COALESCE(lhl.computed_cost, 0)) as recorded'))
+            ->pluck('recorded', 'project_id');
+
+        $materialCosts = empty($ids) ? collect() : DB::table('material_usage as mu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'mu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->groupBy('ph.project_id')
+            ->select('ph.project_id', DB::raw('SUM(COALESCE(mu.computed_cost, 0)) as recorded'))
+            ->pluck('recorded', 'project_id');
+
+        $equipmentCosts = empty($ids) ? collect() : DB::table('equipment_usage as eu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'eu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->groupBy('ph.project_id')
+            ->select('ph.project_id', DB::raw('SUM(COALESCE(eu.computed_cost, 0)) as recorded'))
+            ->pluck('recorded', 'project_id');
+
+        $projects = $projects->map(function ($project) use ($laborCosts, $materialCosts, $equipmentCosts) {
+            $recorded = (float) ($laborCosts[$project->project_id] ?? 0)
+                + (float) ($materialCosts[$project->project_id] ?? 0)
+                + (float) ($equipmentCosts[$project->project_id] ?? 0);
+
+            $summary = ProjectBudget::summarize(
+                (float) $project->approved_budget,
+                (float) $project->remaining_budget,
+                $recorded,
+            );
+
+            $project->spent_budget = $summary['spent_budget'];
+            $project->utilization = $summary['utilization'];
+            $project->recorded_costs = $summary['recorded_costs'];
+
+            return $project;
+        });
+
         return response()->json(['data' => $projects]);
     }
 
@@ -107,7 +161,9 @@ class AdminController extends Controller
             ->get();
 
         return response()->json(['data' => $phases]);
-    }    public function assignments(): JsonResponse
+    }
+
+    public function assignments(): JsonResponse
     {
         $assignments = DB::table('workforce_assignment as wa')
             ->join('laborer as l', 'l.laborer_id', '=', 'wa.laborer_id')
@@ -137,6 +193,147 @@ class AdminController extends Controller
             'equipment' => DB::table('equipment')->orderBy('equipment_name')->get(),
             'materials' => DB::table('materials')->orderBy('material_name')->get(),
             'suppliers' => DB::table('suppliers')->orderBy('supplier_name')->get(),
+        ]);
+    }
+
+    public function storeMaterial(Request $request): JsonResponse
+    {
+        $material = Material::create($this->materialData($request) + [
+            'created_by' => $request->user()->user_id,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Material created successfully.',
+            'data' => $material,
+        ], 201);
+    }
+
+    public function updateMaterial(Request $request, int $material): JsonResponse
+    {
+        $model = Material::findOrFail($material);
+        $model->update($this->materialData($request, $material) + [
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Material updated successfully.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    public function destroyMaterial(int $material): JsonResponse
+    {
+        $model = Material::findOrFail($material);
+
+        if (DB::table('material_usage')->where('material_id', $model->material_id)->exists()) {
+            return response()->json([
+                'message' => 'This material has usage records and cannot be deleted.',
+            ], 422);
+        }
+
+        $model->delete();
+
+        return response()->json(['message' => 'Material deleted successfully.']);
+    }
+
+    public function storeEquipment(Request $request): JsonResponse
+    {
+        $equipment = Equipment::create($this->equipmentData($request) + [
+            'equipment_status' => 'Available',
+            'created_by' => $request->user()->user_id,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Equipment created successfully.',
+            'data' => $equipment,
+        ], 201);
+    }
+
+    public function updateEquipment(Request $request, int $equipment): JsonResponse
+    {
+        $model = Equipment::findOrFail($equipment);
+        $model->update($this->equipmentData($request, $equipment) + [
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Equipment updated successfully.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    public function changeEquipmentStatus(Request $request, int $equipment): JsonResponse
+    {
+        $model = Equipment::findOrFail($equipment);
+        $data = $request->validate([
+            'status' => ['required', Rule::in(self::EQUIPMENT_STATUSES)],
+        ]);
+
+        $current = $model->equipment_status ?? 'Available';
+        $allowed = self::EQUIPMENT_TRANSITIONS[$current] ?? [];
+
+        if (! in_array($data['status'], $allowed, true)) {
+            return response()->json([
+                'message' => 'Equipment status cannot move from '.$current.' to '.$data['status'].'.',
+            ], 422);
+        }
+
+        $model->update([
+            'equipment_status' => $data['status'],
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Equipment marked '.$data['status'].'.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    public function destroyEquipment(int $equipment): JsonResponse
+    {
+        $model = Equipment::findOrFail($equipment);
+
+        if (DB::table('equipment_usage')->where('equipment_id', $model->equipment_id)->exists()) {
+            return response()->json([
+                'message' => 'This equipment has usage records and cannot be deleted.',
+            ], 422);
+        }
+
+        $model->delete();
+
+        return response()->json(['message' => 'Equipment deleted successfully.']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function materialData(Request $request, ?int $materialId = null): array
+    {
+        return $request->validate([
+            'material_name' => [
+                'required', 'string', 'max:255',
+                Rule::unique('materials', 'material_name')->ignore($materialId, 'material_id'),
+            ],
+            'unit_of_measure' => ['nullable', 'string', 'max:50'],
+            'unit_cost' => ['required', 'numeric', 'min:0'],
+            'stock_quantity' => ['required', 'integer', 'min:0'],
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function equipmentData(Request $request, ?int $equipmentId = null): array
+    {
+        return $request->validate([
+            'equipment_name' => [
+                'required', 'string', 'max:255',
+                Rule::unique('equipment', 'equipment_name')->ignore($equipmentId, 'equipment_id'),
+            ],
+            'equipment_type' => ['nullable', 'string', 'max:100'],
+            'hourly_rental_rate' => ['required', 'numeric', 'min:0'],
         ]);
     }
 
@@ -192,7 +389,15 @@ class AdminController extends Controller
         $term = trim((string) $request->query('q', ''));
 
         if ($term === '') {
-            return response()->json(['users' => [], 'skills' => [], 'projects' => []]);
+            return response()->json([
+                'users' => [],
+                'skills' => [],
+                'projects' => [],
+                'phases' => [],
+                'assignments' => [],
+                'materials' => [],
+                'equipment' => [],
+            ]);
         }
 
         $like = '%'.$term.'%';
@@ -221,10 +426,118 @@ class AdminController extends Controller
             ->limit(20)
             ->get(['project_id', 'project_name', 'client_name', 'location', 'status']);
 
+        $phases = DB::table('project_phases as ph')
+            ->join('projects as p', 'p.project_id', '=', 'ph.project_id')
+            ->where(function ($query) use ($like) {
+                $query->where('ph.project_name', 'like', $like)
+                    ->orWhere('ph.description', 'like', $like)
+                    ->orWhere('p.project_name', 'like', $like);
+            })
+            ->orderBy('ph.phase_id')
+            ->limit(20)
+            ->get([
+                'ph.phase_id',
+                'ph.project_id',
+                'ph.project_name as phase_name',
+                'p.project_name as project',
+                'ph.description',
+                'ph.status',
+            ])
+            ->map(fn ($row) => [
+                'phase_id' => (int) $row->phase_id,
+                'project_id' => (int) $row->project_id,
+                'phase_name' => $row->phase_name,
+                'project' => $row->project,
+                'description' => $row->description,
+                'status' => $row->status,
+            ]);
+
+        $assignments = DB::table('workforce_assignment as wa')
+            ->join('laborer as l', 'l.laborer_id', '=', 'wa.laborer_id')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->join('projects as p', 'p.project_id', '=', 'ph.project_id')
+            ->where(function ($query) use ($like) {
+                $query->where('l.first_name', 'like', $like)
+                    ->orWhere('l.last_name', 'like', $like)
+                    ->orWhere('ph.project_name', 'like', $like)
+                    ->orWhere('p.project_name', 'like', $like)
+                    ->orWhere('wa.role_on_task', 'like', $like);
+            })
+            ->orderBy('wa.assignment_id')
+            ->limit(20)
+            ->get([
+                'wa.assignment_id',
+                'l.first_name',
+                'l.last_name',
+                'p.project_name as project',
+                'ph.project_name as phase',
+                'wa.role_on_task',
+                'wa.status',
+            ])
+            ->map(fn ($row) => [
+                'assignment_id' => (int) $row->assignment_id,
+                'worker' => trim($row->first_name.' '.$row->last_name),
+                'project' => $row->project,
+                'phase' => $row->phase,
+                'role_on_task' => $row->role_on_task,
+                'status' => $row->status,
+            ]);
+
+        $materials = DB::table('materials')
+            ->where(function ($query) use ($like) {
+                $query->where('material_name', 'like', $like)
+                    ->orWhere('unit_of_measure', 'like', $like);
+            })
+            ->orderBy('material_name')
+            ->limit(20)
+            ->get([
+                'material_id',
+                'material_name',
+                'unit_of_measure',
+                'unit_cost',
+                'stock_quantity',
+            ])
+            ->map(fn ($row) => [
+                'material_id' => (int) $row->material_id,
+                'material_name' => $row->material_name,
+                'unit_of_measure' => $row->unit_of_measure,
+                'unit_cost' => $row->unit_cost !== null ? (float) $row->unit_cost : null,
+                'stock_quantity' => (int) $row->stock_quantity,
+            ]);
+
+        $equipment = DB::table('equipment')
+            ->where(function ($query) use ($like) {
+                $query->where('equipment_name', 'like', $like)
+                    ->orWhere('equipment_type', 'like', $like)
+                    ->orWhere('equipment_status', 'like', $like);
+            })
+            ->orderBy('equipment_name')
+            ->limit(20)
+            ->get([
+                'equipment_id',
+                'equipment_name',
+                'equipment_type',
+                'hourly_rental_rate',
+                'equipment_status',
+            ])
+            ->map(fn ($row) => [
+                'equipment_id' => (int) $row->equipment_id,
+                'equipment_name' => $row->equipment_name,
+                'equipment_type' => $row->equipment_type,
+                'hourly_rental_rate' => $row->hourly_rental_rate !== null
+                    ? (float) $row->hourly_rental_rate
+                    : null,
+                'equipment_status' => $row->equipment_status,
+            ]);
+
         return response()->json([
             'users' => $users,
             'skills' => $skills,
             'projects' => $projects,
+            'phases' => $phases,
+            'assignments' => $assignments,
+            'materials' => $materials,
+            'equipment' => $equipment,
         ]);
     }
 }

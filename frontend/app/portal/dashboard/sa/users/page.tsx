@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  getUser,
   listUsers,
   setUserActive,
   roleCodeFromName,
@@ -12,8 +13,10 @@ import {
   SaPanel,
   SaTable,
   StatusBadge,
+  formatDate,
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
+import { RecordDetails, type DetailRow } from "@/app/portal/dashboard/_components/RecordDetails";
 import { CreateUserModal } from "./CreateUserModal";
 import styles from "../page.module.css";
 
@@ -35,6 +38,14 @@ export default function UsersPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const [detail, setDetail] = useState<{
+    title: string;
+    subtitle: string;
+    rows: DetailRow[];
+  } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -133,6 +144,39 @@ export default function UsersPage() {
     }
   };
 
+  const openDetails = async (row: Row) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailError("");
+    setDetail(null);
+
+    try {
+      const user = await getUser(row.user_id);
+      const role =
+        ROLE_LABELS[user.role_name ?? ""] ?? (user.role_name ?? "-");
+
+      setDetail({
+        title: user.full_name,
+        subtitle: user.id_number,
+        rows: [
+          { label: "Account ID", value: user.id_number },
+          { label: "Full Name", value: user.full_name },
+          { label: "Email", value: user.email },
+          { label: "Contact", value: user.contact_number ?? "-" },
+          { label: "Role", value: role },
+          { label: "Status", value: user.is_active ? "Active" : "Inactive" },
+          { label: "Created Date", value: formatDate(user.created_at) },
+        ],
+      });
+    } catch (err) {
+      setDetailError(
+        err instanceof Error ? err.message : "Failed to load user details.",
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const columns: SaColumn<Row>[] = [
     {
       key: "name",
@@ -162,10 +206,17 @@ export default function UsersPage() {
           <button
             type="button"
             className={styles.linkButton}
+            onClick={() => openDetails(row)}
+          >
+            View
+          </button>
+          <button
+            type="button"
+            className={styles.linkButton}
             onClick={() => toggle(row)}
             disabled={busyId === row.user_id}
           >
-            {row.is_active ? "Disable" : "Enable"}
+            {row.is_active ? "Deactivate" : "Reactivate"}
           </button>
         </div>
       ),
@@ -232,6 +283,23 @@ export default function UsersPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         onCreated={handleCreated}
+      />
+
+      <RecordDetails
+        open={detailOpen}
+        title={detail?.title ?? "User Details"}
+        subtitle={detail?.subtitle}
+        rows={
+          detailLoading
+            ? [{ label: "Loading", value: "Fetching user details..." }]
+            : detailError
+              ? [{ label: "Error", value: detailError }]
+              : (detail?.rows ?? [])
+        }
+        onClose={() => {
+          setDetailOpen(false);
+          setDetail(null);
+        }}
       />
     </SaPage>
   );

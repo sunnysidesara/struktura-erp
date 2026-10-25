@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listPmProjects, listPmSiteSupervisors, type PmProject, type PmSupervisor } from "@/lib/api";
+import { listPmProjects, listPmSiteSupervisors, changePmProjectStatus, type PmProject, type PmSupervisor } from "@/lib/api";
 import {
   SaPage,
   SaPanel,
@@ -11,6 +11,7 @@ import {
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { ProjectModal } from "./ProjectModal";
+import { StatusActions, type StatusAction } from "../../_components/StatusActions";
 import { selectPmProject, usePmProject } from "../_components/projectSelection";
 import { RecordDetails, type DetailRow } from "@/app/portal/dashboard/_components/RecordDetails";
 import styles from "../../sa/page.module.css";
@@ -27,6 +28,7 @@ export default function AllProjectsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [notice, setNotice] = useState<Notice>(null);
+  const [statusBusyId, setStatusBusyId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PmProject | null>(null);
   const [detail, setDetail] = useState<{ title: string; rows: DetailRow[] } | null>(null);
@@ -96,6 +98,61 @@ export default function AllProjectsPage() {
     load();
   };
 
+  const statusActions = (project: PmProject): StatusAction[] => {
+    const current = project.status ?? "Not Started";
+    const run = (next: string) => () => handleStatusChange(project, next);
+
+    switch (current) {
+      case "Not Started":
+        return [{ label: "Start Project", onClick: run("On Track"), variant: "primary" }];
+      case "On Track":
+        return [
+          { label: "Mark Delayed", onClick: run("Delayed") },
+          { label: "Put on Hold", onClick: run("On Hold") },
+          { label: "Complete Project", onClick: run("Completed"), variant: "primary" },
+        ];
+      case "Delayed":
+        return [
+          { label: "Resume", onClick: run("On Track"), variant: "primary" },
+          { label: "Put on Hold", onClick: run("On Hold") },
+          { label: "Complete Project", onClick: run("Completed") },
+        ];
+      case "On Hold":
+        return [
+          { label: "Resume", onClick: run("On Track"), variant: "primary" },
+          { label: "Mark Delayed", onClick: run("Delayed") },
+          { label: "Complete Project", onClick: run("Completed") },
+        ];
+      default:
+        return [];
+    }
+  };
+
+  const handleStatusChange = async (project: PmProject, next: string) => {
+    if (
+      next === "Completed" &&
+      !window.confirm(`Mark ${project.project_name} as Completed? This is final.`)
+    ) {
+      return;
+    }
+
+    setStatusBusyId(project.project_id);
+    setNotice(null);
+
+    try {
+      const result = await changePmProjectStatus(project.project_id, next);
+      setNotice({ type: "success", message: result.message });
+      load();
+    } catch (err) {
+      setNotice({
+        type: "error",
+        message: err instanceof Error ? err.message : "Could not change the project status.",
+      });
+    } finally {
+      setStatusBusyId(null);
+    }
+  };
+
   const columns: SaColumn<PmProject>[] = [
     {
       key: "project",
@@ -112,7 +169,17 @@ export default function AllProjectsPage() {
       key: "status",
       label: "Status",
       status: true,
-      render: (row) => <StatusBadge status={row.status} />,
+      render: (row) => (
+        <div className={pmStyles.statusCell}>
+          <StatusBadge status={row.status} />
+          <StatusActions
+            actions={statusActions(row).map((action) => ({
+              ...action,
+              disabled: statusBusyId !== null,
+            }))}
+          />
+        </div>
+      ),
     },
     { key: "progress", label: "Progress", render: (row) => `${row.progress}%` },
     {

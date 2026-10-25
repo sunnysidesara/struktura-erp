@@ -22,6 +22,7 @@ type Values = {
   fullName: string;
   email: string;
   password: string;
+  confirmPassword: string;
   role: string;
 };
 
@@ -31,6 +32,7 @@ const EMPTY_VALUES: Values = {
   fullName: "",
   email: "",
   password: "",
+  confirmPassword: "",
   role: "",
 };
 
@@ -58,6 +60,12 @@ function validate(values: Values): FieldErrors {
     errors.password = "Password is required.";
   } else if (values.password.length < 8) {
     errors.password = "Password must be at least 8 characters.";
+  }
+
+  if (!values.confirmPassword) {
+    errors.confirmPassword = "Please confirm the password.";
+  } else if (values.password !== values.confirmPassword) {
+    errors.confirmPassword = "Passwords do not match.";
   }
 
   if (!values.role) {
@@ -143,7 +151,17 @@ export function CreateUserModal({
 
   const update = (key: keyof Values, value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
-    setErrors((current) => ({ ...current, [key]: undefined }));
+    setErrors((current) => {
+      const next: FieldErrors = { ...current, [key]: undefined };
+
+      // Editing either password field invalidates a previous mismatch error.
+      if (key === "password" || key === "confirmPassword") {
+        next.password = undefined;
+        next.confirmPassword = undefined;
+      }
+
+      return next;
+    });
     setFormError("");
   };
 
@@ -180,8 +198,9 @@ export function CreateUserModal({
         last_name,
         email: values.email.trim(),
         password: values.password,
-        // The API requires a confirmation; this dialog uses one password field.
-        password_confirmation: values.password,
+        // The user retypes the password in the confirm field; the API validates
+        // that both values match.
+        password_confirmation: values.confirmPassword,
         role_id: role.role_id,
       });
 
@@ -195,6 +214,9 @@ export function CreateUserModal({
         if (nameError) serverErrors.fullName = nameError;
         if (first("email")) serverErrors.email = first("email");
         if (first("password")) serverErrors.password = first("password");
+        if (first("password_confirmation")) {
+          serverErrors.confirmPassword = first("password_confirmation");
+        }
         if (first("role_id")) serverErrors.role = first("role_id");
 
         if (Object.values(serverErrors).some(Boolean)) {
@@ -345,6 +367,35 @@ export function CreateUserModal({
                 Minimum of 8 characters.
               </span>
             )}
+          </div>
+
+          <div className={styles.field}>
+            <label htmlFor="create-user-confirm-password">
+              Confirm Password
+            </label>
+            <input
+              id="create-user-confirm-password"
+              type="password"
+              value={values.confirmPassword}
+              onChange={(event) => update("confirmPassword", event.target.value)}
+              placeholder="Re-enter the password"
+              autoComplete="new-password"
+              aria-invalid={errors.confirmPassword ? true : undefined}
+              aria-describedby={
+                errors.confirmPassword
+                  ? "create-user-confirm-password-error"
+                  : undefined
+              }
+            />
+            {errors.confirmPassword ? (
+              <span
+                className={styles.error}
+                id="create-user-confirm-password-error"
+                role="alert"
+              >
+                {errors.confirmPassword}
+              </span>
+            ) : null}
           </div>
 
           <div className={styles.field}>

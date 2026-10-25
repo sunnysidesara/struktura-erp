@@ -126,7 +126,6 @@ export default function PortalPage() {
                 type="text"
                 value={idNumber}
                 onChange={(event) => setIdNumber(event.target.value.toUpperCase())}
-                placeholder="e.g., SYS010001"
                 autoComplete="username"
                 autoFocus
                 required

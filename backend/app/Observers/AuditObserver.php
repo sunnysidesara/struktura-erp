@@ -8,6 +8,8 @@ use App\Models\LaborHourLog;
 use App\Models\MaterialUsage;
 use App\Models\Project;
 use App\Models\ProjectPhase;
+use App\Models\SiteTask;
+use App\Models\WorkforceAssignment;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
@@ -87,6 +89,18 @@ class AuditObserver
     {
         if ($model instanceof Project || $model instanceof ProjectPhase) {
             return $model->project_id !== null ? (int) $model->project_id : null;
+        }
+
+        if ($model instanceof SiteTask) {
+            return $model->project_id !== null ? (int) $model->project_id : null;
+        }
+
+        if ($model instanceof WorkforceAssignment) {
+            $projectId = $model->phase_id
+                ? DB::table('project_phases')->where('phase_id', $model->phase_id)->value('project_id')
+                : null;
+
+            return $projectId !== null ? (int) $projectId : null;
         }
 
         // Daily site logs: resolve the owning project so the Admin can filter

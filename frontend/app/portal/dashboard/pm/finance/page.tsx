@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  getPmCostReport,
   listPmBudgets,
   listPmPhaseCosts,
   type PmBudget,
+  type PmCostReport,
   type PmPhaseCost,
 } from "@/lib/api";
 import {
@@ -48,11 +50,17 @@ const costColumns: SaColumn<PmPhaseCost>[] = [
   { key: "total", label: "Total", render: (row) => <strong>{money(row.total)}</strong> },
 ];
 
+const categoryColumns: SaColumn<PmCostReport["categories"][number]>[] = [
+  { key: "category", label: "Category", render: (row) => row.category },
+  { key: "actual", label: "Actual", render: (row) => money(row.actual) },
+];
+
 /** Single-page finance view: KPIs, resource breakdown, per-phase cost reports. */
 function FinancePanel({ projectId }: { projectId: number }) {
   const router = useRouter();
   const [budget, setBudget] = useState<PmBudget | null>(null);
   const [phaseCosts, setPhaseCosts] = useState<PmPhaseCost[]>([]);
+  const [report, setReport] = useState<PmCostReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -61,11 +69,16 @@ function FinancePanel({ projectId }: { projectId: number }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
 
-    Promise.all([listPmBudgets(projectId), listPmPhaseCosts(projectId)])
-      .then(([budgets, costs]) => {
+    Promise.all([
+      listPmBudgets(projectId),
+      listPmPhaseCosts(projectId),
+      getPmCostReport(projectId),
+    ])
+      .then(([budgets, costs, costReport]) => {
         if (!active) return;
         setBudget(budgets[0] ?? null);
         setPhaseCosts(costs);
+        setReport(costReport);
         setError("");
       })
       .catch((err) => {
@@ -79,6 +92,13 @@ function FinancePanel({ projectId }: { projectId: number }) {
       active = false;
     };
   }, [projectId]);
+
+  const categoryRows = report
+    ? [
+        ...report.categories,
+        { category: "Total Actual", actual: report.totals.actual },
+      ]
+    : [];
 
   return (
     <>
@@ -101,6 +121,53 @@ function FinancePanel({ projectId }: { projectId: number }) {
           note="Still available to spend"
         />
       </MetricGrid>
+
+      <SaPanel title="Cost Categories">
+        <SaTable
+          columns={categoryColumns}
+          rows={categoryRows}
+          loading={loading}
+          emptyText="No cost data for this project yet."
+          rowKey={(row) => row.category}
+        />
+
+        <div className={pmStyles.breakdownList}>
+          <div className={pmStyles.breakdownRow}>
+            <div className={pmStyles.breakdownInfo}>
+              <p className={pmStyles.breakdownTitle}>Remaining</p>
+              <p className={pmStyles.breakdownMeta}>Approved minus actual</p>
+            </div>
+            <strong>
+              {loading
+                ? "..."
+                : money(budget?.remaining ?? report?.totals.remaining ?? 0)}
+            </strong>
+          </div>
+          <div className={pmStyles.breakdownRow}>
+            <div className={pmStyles.breakdownInfo}>
+              <p className={pmStyles.breakdownTitle}>Variance</p>
+              <p className={pmStyles.breakdownMeta}>Approved minus recorded actual</p>
+            </div>
+            <strong>{loading ? "..." : money(report?.totals.variance ?? 0)}</strong>
+          </div>
+          <div className={pmStyles.breakdownRow}>
+            <div className={pmStyles.breakdownInfo}>
+              <p className={pmStyles.breakdownTitle}>Utilization</p>
+              <p className={pmStyles.breakdownMeta}>Of approved budget</p>
+            </div>
+            <strong>
+              {loading
+                ? "..."
+                : `${report?.totals.utilization ?? budget?.utilization ?? 0}%`}
+            </strong>
+          </div>
+        </div>
+
+        <p className={pmStyles.breakdownMeta} style={{ marginTop: "0.75rem" }}>
+          Recorded usage actuals; can differ from budget spend where budgets were
+          adjusted manually.
+        </p>
+      </SaPanel>
 
       <SaPanel title="Breakdown">
         <div className={pmStyles.breakdownList}>

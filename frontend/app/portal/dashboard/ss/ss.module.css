@@ -270,6 +270,67 @@
   white-space: nowrap;
 }
 
+.statusSelect {
+  min-width: 120px;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #d1d9e6;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #0a1440;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.statusSelect:focus {
+  outline: none;
+  border-color: #ca8a04;
+  box-shadow: 0 0 0 3px rgb(202 138 4 / 15%);
+}
+
+.statusSelect:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.statusButton {
+  padding: 0.4rem 0.65rem;
+  border: 1px solid #ca8a04;
+  border-radius: 7px;
+  background: #ca8a04;
+  color: #0a1440;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.statusButton:hover:not(:disabled) {
+  background: #a16207;
+  color: #ffffff;
+}
+
+.statusButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.statusComplete {
+  color: #15803d;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.requestHint {
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 @media (max-width: 720px) {
   .detailGrid {
     grid-template-columns: minmax(0, 1fr);

@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  approvePmPhaseCompletion,
   deletePmPhase,
   listPmPhases,
+  rejectPmPhaseCompletion,
+  startPmPhase,
   type PmPhase,
   type PmProject,
 } from "@/lib/api";
@@ -17,6 +20,8 @@ import {
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { RecordDetails, type DetailRow } from "@/app/portal/dashboard/_components/RecordDetails";
 import { PhaseModal } from "./PhaseModal";
+import { TasksPanel } from "./TasksPanel";
+import { StatusActions, type StatusAction } from "../../_components/StatusActions";
 import styles from "../../sa/page.module.css";
 import pmStyles from "../page.module.css";
 
@@ -28,6 +33,7 @@ export function PhasesPanel({ project }: { project: PmProject }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
+  const [statusBusyId, setStatusBusyId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<PmPhase | null>(null);
   const [detail, setDetail] = useState<{ title: string; rows: DetailRow[] } | null>(null);
@@ -55,6 +61,65 @@ export function PhasesPanel({ project }: { project: PmProject }) {
     setEditing(null);
     setNotice({ type: "success", message });
     load();
+  };
+
+  const handlePhaseAction = async (phase: PmPhase, action: "start" | "approve" | "reject") => {
+    if (
+      action === "reject" &&
+      !window.confirm("Reject this completion request and keep the phase In Progress?")
+    ) {
+      return;
+    }
+
+    setStatusBusyId(phase.phase_id);
+    setNotice(null);
+
+    try {
+      const result =
+        action === "start"
+          ? await startPmPhase(phase.phase_id)
+          : action === "approve"
+            ? await approvePmPhaseCompletion(phase.phase_id)
+            : await rejectPmPhaseCompletion(phase.phase_id);
+
+      setNotice({ type: "success", message: result.message });
+      load();
+    } catch (err) {
+      setNotice({
+        type: "error",
+        message: err instanceof Error ? err.message : "Could not change the phase status.",
+      });
+    } finally {
+      setStatusBusyId(null);
+    }
+  };
+
+  const phaseStatusActions = (phase: PmPhase): StatusAction[] => {
+    if (phase.status === "Not Started") {
+      return [
+        {
+          label: "Start Phase",
+          onClick: () => handlePhaseAction(phase, "start"),
+          variant: "primary",
+        },
+      ];
+    }
+
+    if (phase.status === "In Progress" && phase.completion_requested_at) {
+      return [
+        {
+          label: "Approve Completion",
+          onClick: () => handlePhaseAction(phase, "approve"),
+          variant: "primary",
+        },
+        {
+          label: "Reject Request",
+          onClick: () => handlePhaseAction(phase, "reject"),
+        },
+      ];
+    }
+
+    return [];
   };
 
   const handleDelete = async (phase: PmPhase) => {
@@ -112,6 +177,12 @@ export function PhasesPanel({ project }: { project: PmProject }) {
           {row.completion_requested_at && row.status !== "Completed" ? (
             <span className={pmStyles.completionBadge}>Completion Requested</span>
           ) : null}
+          <StatusActions
+            actions={phaseStatusActions(row).map((action) => ({
+              ...action,
+              disabled: statusBusyId !== null,
+            }))}
+          />
         </div>
       ),
     },
@@ -200,6 +271,8 @@ export function PhasesPanel({ project }: { project: PmProject }) {
           onSortChange={setSort}
         />
       </SaPanel>
+
+      <TasksPanel project={project} phases={phases} />
 
       <PhaseModal
         open={modalOpen}

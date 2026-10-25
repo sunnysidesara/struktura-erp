@@ -44,10 +44,11 @@ const roleLabels: Record<UserRole, string> = {
 };
 
 // The header search box jumps to the search screen that belongs to the
-// signed-in role. Site Supervisors have no search box (they use My Sites).
-const roleSearchPath: Record<Exclude<UserRole, "SS">, string> = {
+// signed-in role. Site Supervisors search within their selected site.
+const roleSearchPath: Record<UserRole, string> = {
   SA: "/portal/dashboard/sa/search",
   PM: "/portal/dashboard/pm/search",
+  SS: "/portal/dashboard/ss/search",
 };
 
 type UtilityIcon =
@@ -289,7 +290,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const roleBase = rolePath[storedUser.role];
     const isAccountRoute =
       pathname === "/portal/dashboard/profile" ||
-      pathname === "/portal/dashboard/settings";
+      pathname === "/portal/dashboard/settings" ||
+      pathname === "/portal/dashboard/roles";
     const isRoleRoute =
       pathname === roleBase || pathname.startsWith(`${roleBase}/`);
 
@@ -461,7 +463,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!user || user.role === "SS") {
+    if (!user) {
       return;
     }
 
@@ -473,6 +475,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     setDrawerOpen(false);
     router.push(`${roleSearchPath[user.role]}?q=${encodeURIComponent(term)}`);
   };
+
+  const searchForm = (
+    <form
+      className={styles.searchForm}
+      role="search"
+      onSubmit={handleSearch}
+    >
+      <Icon name="search" className={styles.searchIcon} />
+      <input
+        type="search"
+        className={styles.searchInput}
+        value={searchTerm}
+        onChange={(event) => setSearchTerm(event.target.value)}
+        placeholder="Search..."
+        aria-label="Search the workspace"
+      />
+    </form>
+  );
 
   const handleLogout = () => {
     // Optimistic sign-out: revoke the token in the background and leave at once
@@ -527,28 +547,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
 
           {user.role === "SS" ? (
-            /* Supervisors swap sites instead of searching: the switcher drives
-               every SS screen. */
-            <SsSiteSwitcher />
+            /* Supervisors swap sites and can search within the active site. */
+            <>
+              <SsSiteSwitcher />
+              {searchForm}
+            </>
           ) : user.role === "PM" ? (
             /* Managers swap the active project from the same place. */
             <PmProjectSwitcher />
           ) : (
-            <form
-              className={styles.searchForm}
-              role="search"
-              onSubmit={handleSearch}
-            >
-              <Icon name="search" className={styles.searchIcon} />
-              <input
-                type="search"
-                className={styles.searchInput}
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search..."
-                aria-label="Search the workspace"
-              />
-            </form>
+            searchForm
           )}
         </div>
 
@@ -705,7 +713,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               {section.items.map((item) => {
                 if (item.type === "link") {
                   const isActive = pathname === item.href;
-                  const isLocked = navLocked && item.href !== rolePath[user.role];
+                  const isLocked = navLocked && item.href !== rolePath[user.role] && item.href !== "/portal/dashboard/roles";
 
                   if (isLocked) {
                     return (

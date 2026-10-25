@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\LaborerController;
 use App\Http\Controllers\Api\PmController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\SkillController;
 use App\Http\Controllers\Api\SsController;
+use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Models\Role;
 use Illuminate\Support\Facades\Route;
@@ -53,6 +55,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/admin/phases', [AdminController::class, 'phases']);
             Route::get('/admin/assignments', [AdminController::class, 'assignments']);
             Route::get('/admin/resources', [AdminController::class, 'resources']);
+            Route::post('/admin/materials', [AdminController::class, 'storeMaterial']);
+            Route::put('/admin/materials/{material}', [AdminController::class, 'updateMaterial']);
+            Route::delete('/admin/materials/{material}', [AdminController::class, 'destroyMaterial']);
+            Route::post('/admin/equipment', [AdminController::class, 'storeEquipment']);
+            Route::put('/admin/equipment/{equipment}', [AdminController::class, 'updateEquipment']);
+            Route::patch('/admin/equipment/{equipment}/status', [AdminController::class, 'changeEquipmentStatus']);
+            Route::delete('/admin/equipment/{equipment}', [AdminController::class, 'destroyEquipment']);
             Route::get('/admin/audit/events', [AdminController::class, 'auditEvents']);
             Route::get('/admin/audit/logins', [AdminController::class, 'auditLogins']);
             Route::get('/admin/search', [AdminController::class, 'search']);
@@ -69,7 +78,10 @@ Route::prefix('v1')->group(function () {
             Route::get('/pm/dashboard', [PmController::class, 'dashboard']);
             Route::get('/pm/projects', [PmController::class, 'projects']);
             Route::get('/pm/phases', [PmController::class, 'phases']);
+            Route::get('/pm/tasks', [TaskController::class, 'index']);
             Route::get('/pm/workforce', [PmController::class, 'workforce']);
+            Route::get('/pm/laborers', [LaborerController::class, 'index']);
+            Route::get('/pm/laborers/{laborer}', [LaborerController::class, 'show']);
             Route::get('/pm/skill-match', [PmController::class, 'skillMatch']);
             Route::get('/pm/materials', [PmController::class, 'materials']);
             Route::get('/pm/equipment', [PmController::class, 'equipment']);
@@ -86,14 +98,27 @@ Route::prefix('v1')->group(function () {
             Route::get('/pm/material-usage', [PmController::class, 'materialUsage']);
             Route::get('/pm/equipment-usage', [PmController::class, 'equipmentUsage']);
 
-            // Only a Project Manager may create/edit their own projects, phases
-            // and laborer assignments — the Admin has view-only oversight.
+            // Only a Project Manager may create/edit their own projects, phases,
+            // laborers and assignments — the Admin has view-only oversight.
             Route::middleware('role:'.Role::PROJECT_MANAGER)->group(function () {
+                Route::post('/pm/laborers', [LaborerController::class, 'store']);
+                Route::put('/pm/laborers/{laborer}', [LaborerController::class, 'update']);
+                Route::delete('/pm/laborers/{laborer}', [LaborerController::class, 'destroy']);
+                Route::post('/pm/laborers/{laborer}/skills', [LaborerController::class, 'attachSkill']);
+                Route::delete('/pm/laborers/{laborer}/skills/{skill}', [LaborerController::class, 'detachSkill']);
+                Route::patch('/pm/laborers/{laborer}/status', [LaborerController::class, 'changeStatus']);
                 Route::post('/pm/projects', [PmController::class, 'storeProject']);
                 Route::put('/pm/projects/{project}', [PmController::class, 'updateProject']);
+                Route::patch('/pm/projects/{project}/status', [PmController::class, 'changeProjectStatus']);
                 Route::post('/pm/phases', [PmController::class, 'storePhase']);
                 Route::put('/pm/phases/{phase}', [PmController::class, 'updatePhase']);
+                Route::patch('/pm/phases/{phase}/start', [PmController::class, 'startPhase']);
+                Route::patch('/pm/phases/{phase}/approve-completion', [PmController::class, 'approvePhaseCompletion']);
+                Route::patch('/pm/phases/{phase}/reject-completion', [PmController::class, 'rejectPhaseCompletion']);
                 Route::delete('/pm/phases/{phase}', [PmController::class, 'destroyPhase']);
+                Route::post('/pm/tasks', [TaskController::class, 'store']);
+                Route::put('/pm/tasks/{task}', [TaskController::class, 'update']);
+                Route::delete('/pm/tasks/{task}', [TaskController::class, 'destroy']);
                 Route::post('/pm/assignments', [PmController::class, 'storeAssignment']);
                 Route::delete('/pm/assignments/{assignment}', [PmController::class, 'destroyAssignment']);
                 Route::post('/pm/material-usage', [PmController::class, 'storeMaterialUsage']);
@@ -128,6 +153,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/ss/equipment', [SsController::class, 'storeEquipmentUsage']);
                 Route::put('/ss/equipment/{id}', [SsController::class, 'updateEquipmentUsage']);
                 Route::delete('/ss/equipment/{id}', [SsController::class, 'destroyEquipmentUsage']);
+                Route::put('/ss/tasks/{task}/status', [TaskController::class, 'updateStatus']);
                 Route::post('/ss/phases/{id}/request-completion', [SsController::class, 'requestCompletion']);
             });
         });

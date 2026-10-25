@@ -23,7 +23,7 @@ class LaborHourLog extends Model
         'time_out',
         'regular_hours',
         'overtime_hours',
-        'computed_cost',
+        'hourly_rate_at_use',
         'created_by',
         'created_at',
     ];
@@ -36,6 +36,7 @@ class LaborHourLog extends Model
         return [
             'log_date' => 'date',
             'created_at' => 'datetime',
+            'hourly_rate_at_use' => 'decimal:6',
         ];
     }
 }

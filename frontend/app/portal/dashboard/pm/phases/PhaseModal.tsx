@@ -10,8 +10,6 @@ import {
 } from "@/lib/api";
 import { FormModal, ModalField, ModalGrid } from "../_components/FormModal";
 
-const PHASE_STATUSES = ["Not Started", "In Progress", "Completed"];
-
 type Values = {
   name: string;
   description: string;
@@ -21,7 +19,6 @@ type Values = {
   equipment: string;
   start: string;
   end: string;
-  status: string;
 };
 
 const EMPTY: Values = {
@@ -33,7 +30,6 @@ const EMPTY: Values = {
   equipment: "",
   start: "",
   end: "",
-  status: "Not Started",
 };
 
 function dateOnly(value: string | null | undefined): string {
@@ -76,7 +72,6 @@ export function PhaseModal({
             equipment: phase.equipment_budget === null || phase.equipment_budget === undefined ? "" : String(phase.equipment_budget),
             start: dateOnly(phase.planned_start),
             end: dateOnly(phase.planned_end),
-            status: phase.status ?? "Not Started",
           }
         : EMPTY,
     );
@@ -109,7 +104,6 @@ export function PhaseModal({
       equipment_budget: values.equipment === "" ? 0 : Number(values.equipment),
       planned_start: values.start || null,
       planned_end: values.end || null,
-      status: values.status,
     };
 
     setSaving(true);
@@ -239,22 +233,6 @@ export function PhaseModal({
             value={values.end}
             onChange={(event) => update("end", event.target.value)}
           />
-        </ModalField>
-      </ModalGrid>
-
-      <ModalGrid>
-        <ModalField label="Status" htmlFor="phase-status">
-          <select
-            id="phase-status"
-            value={values.status}
-            onChange={(event) => update("status", event.target.value)}
-          >
-            {PHASE_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
         </ModalField>
       </ModalGrid>
     </FormModal>

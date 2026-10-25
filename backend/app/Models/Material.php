@@ -21,6 +21,8 @@ class Material extends Model
         'unit_cost',
         'stock_quantity',
         'supplier_name',
+        'created_by',
+        'updated_by',
     ];
 
     /**

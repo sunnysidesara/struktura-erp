@@ -2,17 +2,30 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { searchAll, type ApiSearchResults } from "@/lib/api";
-import { SaPage, SaPanel, SaTable, StatusBadge, Tabs, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
+import { SaPage, SaPanel, SaTable, StatusBadge, Tabs, money, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 import styles from "../page.module.css";
 
 type UserHit = ApiSearchResults["users"][number];
 type SkillHit = ApiSearchResults["skills"][number];
 type ProjectHit = ApiSearchResults["projects"][number];
+type PhaseHit = ApiSearchResults["phases"][number];
+type AssignmentHit = ApiSearchResults["assignments"][number];
+type MaterialHit = ApiSearchResults["materials"][number];
+type EquipmentHit = ApiSearchResults["equipment"][number];
+
+type SearchTab =
+  | "users"
+  | "skills"
+  | "projects"
+  | "phases"
+  | "assignments"
+  | "materials"
+  | "equipment";
 
 export default function SearchPage() {
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<ApiSearchResults | null>(null);
-  const [tab, setTab] = useState<"users" | "skills" | "projects">("users");
+  const [tab, setTab] = useState<SearchTab>("users");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -59,8 +72,42 @@ export default function SearchPage() {
     { key: "status", label: "Status", status: true, render: (row) => <StatusBadge status={row.status} /> },
   ];
 
+  const phaseColumns: SaColumn<PhaseHit>[] = [
+    { key: "name", label: "Phase", render: (row) => row.phase_name ?? "-" },
+    { key: "project", label: "Project", render: (row) => row.project },
+    { key: "description", label: "Description", render: (row) => row.description ?? "-" },
+    { key: "status", label: "Status", status: true, render: (row) => <StatusBadge status={row.status} /> },
+  ];
+
+  const assignmentColumns: SaColumn<AssignmentHit>[] = [
+    { key: "worker", label: "Worker", render: (row) => row.worker },
+    { key: "project", label: "Project", render: (row) => row.project },
+    { key: "phase", label: "Phase", render: (row) => row.phase ?? "-" },
+    { key: "role", label: "Role on Task", render: (row) => row.role_on_task ?? "-" },
+    { key: "status", label: "Status", status: true, render: (row) => <StatusBadge status={row.status} /> },
+  ];
+
+  const materialColumns: SaColumn<MaterialHit>[] = [
+    { key: "name", label: "Material", render: (row) => row.material_name },
+    { key: "unit", label: "Unit", render: (row) => row.unit_of_measure ?? "-" },
+    { key: "cost", label: "Unit Cost", render: (row) => money(row.unit_cost) },
+    { key: "stock", label: "Stock", render: (row) => String(row.stock_quantity) },
+  ];
+
+  const equipmentColumns: SaColumn<EquipmentHit>[] = [
+    { key: "name", label: "Equipment", render: (row) => row.equipment_name },
+    { key: "type", label: "Type", render: (row) => row.equipment_type ?? "-" },
+    { key: "rate", label: "Hourly Rate", render: (row) => money(row.hourly_rental_rate) },
+    {
+      key: "status",
+      label: "Status",
+      status: true,
+      render: (row) => <StatusBadge status={row.equipment_status} />,
+    },
+  ];
+
   return (
-    <SaPage kicker="Search" title="Search" subtitle="Find users, skills and projects across the system">
+    <SaPage kicker="Search" title="Search" subtitle="Find users, skills, projects, phases, assignments, materials and equipment across the system">
       <SaPanel title="Global Search" filters={<form onSubmit={submit} style={{ display: "flex", gap: "0.5rem" }}>
         <input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search..." />
         <button type="submit" className={styles.linkButton}>Search</button>
@@ -75,6 +122,10 @@ export default function SearchPage() {
               { id: "users", label: `Users (${results.users.length})` },
               { id: "skills", label: `Skills (${results.skills.length})` },
               { id: "projects", label: `Projects (${results.projects.length})` },
+              { id: "phases", label: `Phases (${results.phases.length})` },
+              { id: "assignments", label: `Assignments (${results.assignments.length})` },
+              { id: "materials", label: `Materials (${results.materials.length})` },
+              { id: "equipment", label: `Equipment (${results.equipment.length})` },
             ]}
             active={tab}
             onChange={setTab}
@@ -96,6 +147,30 @@ export default function SearchPage() {
           {tab === "projects" ? (
             <SaPanel title={`Projects (${results.projects.length})`}>
               <SaTable columns={projectColumns} rows={results.projects} emptyText="No matching projects." rowKey={(row) => row.project_id} />
+            </SaPanel>
+          ) : null}
+
+          {tab === "phases" ? (
+            <SaPanel title={`Phases (${results.phases.length})`}>
+              <SaTable columns={phaseColumns} rows={results.phases} emptyText="No matching phases." rowKey={(row) => row.phase_id} />
+            </SaPanel>
+          ) : null}
+
+          {tab === "assignments" ? (
+            <SaPanel title={`Assignments (${results.assignments.length})`}>
+              <SaTable columns={assignmentColumns} rows={results.assignments} emptyText="No matching assignments." rowKey={(row) => row.assignment_id} />
+            </SaPanel>
+          ) : null}
+
+          {tab === "materials" ? (
+            <SaPanel title={`Materials (${results.materials.length})`}>
+              <SaTable columns={materialColumns} rows={results.materials} emptyText="No matching materials." rowKey={(row) => row.material_id} />
+            </SaPanel>
+          ) : null}
+
+          {tab === "equipment" ? (
+            <SaPanel title={`Equipment (${results.equipment.length})`}>
+              <SaTable columns={equipmentColumns} rows={results.equipment} emptyText="No matching equipment." rowKey={(row) => row.equipment_id} />
             </SaPanel>
           ) : null}
         </>

@@ -20,6 +20,13 @@ class PmController extends Controller
 {
     /** Statuses a Project Manager may set on their own projects. */
     private const PROJECT_STATUSES = ['Not Started', 'On Track', 'Delayed', 'On Hold', 'Completed'];
+    private const PROJECT_TRANSITIONS = [
+        'Not Started' => ['On Track'],
+        'On Track' => ['Delayed', 'On Hold', 'Completed'],
+        'Delayed' => ['On Track', 'On Hold', 'Completed'],
+        'On Hold' => ['On Track', 'Delayed', 'Completed'],
+        'Completed' => [],
+    ];
     /**
      * Project ids visible to the current user (all for Admin, own for Project Manager).
      *
@@ -43,23 +50,6 @@ class PmController extends Controller
             ->whereIn('project_id', $ids)
             ->where('phase_id', $phaseId)
             ->first();
-    }
-
-    /**
-     * Move a project's remaining budget (negative = spend, positive = refund)
-     * through the Project model so the change is audited.
-     */
-    private function adjustProjectBudget(int $projectId, float $amount): void
-    {
-        $project = Project::query()->lockForUpdate()->find($projectId);
-
-        if (! $project) {
-            return;
-        }
-
-        $project->update([
-            'remaining_budget' => round((float) $project->remaining_budget + $amount, 2),
-        ]);
     }
 
     /**
@@ -238,7 +228,7 @@ class PmController extends Controller
                 'ss.last_name as supervisor_last_name',
                 DB::raw('(SELECT COUNT(*) FROM project_phases ph WHERE ph.project_id = p.project_id) as phase_count'),
                 DB::raw('(SELECT COUNT(*) FROM project_phases ph2 WHERE ph2.project_id = p.project_id AND ph2.status = "Completed") as completed_phases'),
-                DB::raw('(SELECT COUNT(DISTINCT wa.laborer_id) FROM workforce_assignment wa JOIN project_phases ph3 ON ph3.phase_id = wa.phase_id WHERE ph3.project_id = p.project_id) as worker_count')
+                DB::raw('(SELECT COUNT(DISTINCT wa.laborer_id) FROM workforce_assignment wa JOIN project_phases ph3 ON ph3.phase_id = wa.phase_id WHERE ph3.project_id = p.project_id AND wa.status = "Active") as worker_count')
             )
             ->orderBy('p.project_id')
             ->get()
@@ -405,7 +395,7 @@ class PmController extends Controller
             'equipment_budget' => round($equipment, 2),
             // A brand-new project has spent nothing yet.
             'remaining_budget' => $approved,
-            'status' => $data['status'] ?? 'On Track',
+            'status' => 'Not Started',
             // Ownership is always the PM creating it.
             'user_id' => $userId,
             'created_by' => $userId,
@@ -454,7 +444,6 @@ class PmController extends Controller
             'location' => $data['location'] ?? null,
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
-            'status' => $data['status'] ?? $project->status,
             'site_supervisor_id' => $data['site_supervisor_id'] ?? $project->site_supervisor_id,
             'approved_budget' => round($approved, 2),
             'materials_budget' => round($materials, 2),
@@ -470,8 +459,154 @@ class PmController extends Controller
     }
 
     /**
-     * @return array<string, mixed>
+     * Move one of the PM's projects through its status flow.
      */
+    public function changeProjectStatus(Request $request, Project $project): JsonResponse
+    {
+        if ((int) $project->user_id !== (int) $request->user()->user_id) {
+            return response()->json([
+                'message' => 'You can only change projects assigned to you.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(self::PROJECT_STATUSES)],
+        ]);
+
+        $current = $project->status ?? 'Not Started';
+        $allowed = self::PROJECT_TRANSITIONS[$current] ?? [];
+
+        if (! in_array($data['status'], $allowed, true)) {
+            return response()->json([
+                'message' => 'Project status cannot move from '.$current.' to '.$data['status'].'.',
+            ], 422);
+        }
+
+        $project->update([
+            'status' => $data['status'],
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Project moved to '.$data['status'].'.',
+            'data' => $project->fresh(),
+        ]);
+    }
+
+    /**
+     * Move a Not Started phase into In Progress.
+     */
+    public function startPhase(Request $request, int $phase): JsonResponse
+    {
+        $row = $this->phaseFor($this->projectIds($request), $phase);
+
+        if (! $row) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        if ($row->status !== 'Not Started') {
+            return response()->json([
+                'message' => 'Only a Not Started phase can be started.',
+            ], 422);
+        }
+
+        $model = ProjectPhase::findOrFail($phase);
+        $model->update([
+            'status' => 'In Progress',
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Phase started.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    /**
+     * Approve a pending supervisor completion request.
+     */
+    public function approvePhaseCompletion(Request $request, int $phase): JsonResponse
+    {
+        $row = $this->phaseFor($this->projectIds($request), $phase);
+
+        if (! $row) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        if ($row->status !== 'In Progress') {
+            return response()->json([
+                'message' => 'Only an In Progress phase can be completed.',
+            ], 422);
+        }
+
+        if (! $row->completion_requested_at) {
+            return response()->json([
+                'message' => 'The Site Supervisor has not requested completion for this phase.',
+            ], 422);
+        }
+
+        $totalTasks = DB::table('site_task')->where('phase_id', $phase)->count();
+        $openTasks = DB::table('site_task')
+            ->where('phase_id', $phase)
+            ->where('status', '!=', 'Done')
+            ->count();
+
+        if ($totalTasks === 0) {
+            return response()->json([
+                'message' => 'Add at least one task before approving completion.',
+            ], 422);
+        }
+
+        if ($openTasks > 0) {
+            return response()->json([
+                'message' => 'Complete all phase tasks before approving completion.',
+            ], 422);
+        }
+
+        $model = ProjectPhase::findOrFail($phase);
+        $model->update([
+            'status' => 'Completed',
+            'completion_requested_at' => null,
+            'completion_requested_by' => null,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Phase completed.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    /**
+     * Reject a pending supervisor completion request without completing the phase.
+     */
+    public function rejectPhaseCompletion(Request $request, int $phase): JsonResponse
+    {
+        $row = $this->phaseFor($this->projectIds($request), $phase);
+
+        if (! $row) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        if ($row->status !== 'In Progress' || ! $row->completion_requested_at) {
+            return response()->json([
+                'message' => 'There is no pending completion request for this phase.',
+            ], 422);
+        }
+
+        $model = ProjectPhase::findOrFail($phase);
+        $model->update([
+            'completion_requested_at' => null,
+            'completion_requested_by' => null,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Completion request rejected.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
     /**
      * Resource allocations can never exceed the total approved budget.
      */
@@ -503,7 +638,6 @@ class PmController extends Controller
             'approved_budget' => ['nullable', 'numeric', 'min:0'],
             'materials_budget' => ['nullable', 'numeric', 'min:0'],
             'equipment_budget' => ['nullable', 'numeric', 'min:0'],
-            'status' => ['nullable', Rule::in(self::PROJECT_STATUSES)],
             // A project cannot reach the site without a supervisor.
             'site_supervisor_id' => $supervisorRequired
                 ? ['required', 'integer', $supervisorRule]
@@ -539,7 +673,7 @@ class PmController extends Controller
             'equipment_budget' => $data['equipment_budget'] ?? 0,
             'planned_start' => $data['planned_start'] ?? null,
             'planned_end' => $data['planned_end'] ?? null,
-            'status' => $data['status'] ?? 'Not Started',
+            'status' => 'Not Started',
             'required_skill_id' => $data['required_skill_id'] ?? null,
             'created_by' => $request->user()->user_id,
             'updated_by' => $request->user()->user_id,
@@ -602,16 +736,36 @@ class PmController extends Controller
             ->whereIn('project_id', $ids)
             ->where('status', '!=', 'Completed')
             ->count();
-    }    public function workforce(Request $request): JsonResponse
+    }
+
+    /**
+     * Workers for the selected project. "Available" means not actively
+     * assigned to this project; a laborer may still work on another project.
+     */
+    public function workforce(Request $request): JsonResponse
     {
+        $selected = (int) $request->query('project_id', 0);
+
+        if ($selected > 0 && ! in_array($selected, $this->allowedProjectIds($request), true)) {
+            return response()->json([
+                'message' => 'Project not found.',
+            ], 403);
+        }
+
         $ids = $this->projectIds($request);
 
         $available = DB::table('laborer as l')
-            ->leftJoin('workforce_assignment as wa', function ($join) {
-                $join->on('wa.laborer_id', '=', 'l.laborer_id')->where('wa.status', '=', 'Active');
-            })
-            ->whereNull('wa.assignment_id')
             ->where('l.employment_status', 'Active')
+            ->when($ids !== [], function ($query) use ($ids) {
+                $query->whereNotExists(function ($sub) use ($ids) {
+                    $sub->select(DB::raw(1))
+                        ->from('workforce_assignment as wa')
+                        ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+                        ->whereColumn('wa.laborer_id', 'l.laborer_id')
+                        ->where('wa.status', 'Active')
+                        ->whereIn('ph.project_id', $ids);
+                });
+            })
             ->select('l.laborer_id', 'l.first_name', 'l.last_name', 'l.hourly_rate', 'l.employment_status')
             ->orderBy('l.last_name')
             ->get();
@@ -624,10 +778,13 @@ class PmController extends Controller
             ->where('wa.status', 'Active')
             ->select(
                 'wa.assignment_id',
+                'wa.phase_id',
                 'l.laborer_id',
                 'l.first_name',
                 'l.last_name',
                 'l.hourly_rate',
+                'l.employment_status',
+                'wa.hourly_rate_ovveride',
                 'p.project_name as project',
                 'ph.project_name as phase',
                 'wa.role_on_task',
@@ -670,6 +827,14 @@ class PmController extends Controller
             ->join('laborer_skills as ls', 'ls.laborer_id', '=', 'l.laborer_id')
             ->where('ls.skill_id', $phase->required_skill_id)
             ->where('l.employment_status', 'Active')
+            ->whereNotExists(function ($sub) use ($phase) {
+                $sub->select(DB::raw(1))
+                    ->from('workforce_assignment as wa')
+                    ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+                    ->whereColumn('wa.laborer_id', 'l.laborer_id')
+                    ->where('wa.status', 'Active')
+                    ->where('ph.project_id', $phase->project_id);
+            })
             ->select('l.laborer_id', 'l.first_name', 'l.last_name', 'l.hourly_rate', 'l.employment_status')
             ->distinct()
             ->orderBy('l.last_name')
@@ -697,23 +862,30 @@ class PmController extends Controller
     }
 
     /**
-     * Active Site Supervisors a PM can assign to their projects.
+     * Site Supervisors a PM can assign to projects, plus the directory view.
+     * Defaults to active accounts; `include_inactive=1` returns the full list.
      */
-    public function siteSupervisors(): JsonResponse
+    public function siteSupervisors(Request $request): JsonResponse
     {
         $roleId = DB::table('role')
             ->where('role_name', Role::SITE_SUPERVISOR)
             ->value('role_id');
 
-        $rows = DB::table('users')
-            ->where('role_id', $roleId)
-            ->where('is_active', true)
+        $query = DB::table('users')->where('role_id', $roleId);
+
+        if (! $request->boolean('include_inactive')) {
+            $query->where('is_active', true);
+        }
+
+        $rows = $query
             ->orderBy('last_name')
-            ->get(['user_id', 'id_number', 'first_name', 'last_name'])
+            ->get(['user_id', 'id_number', 'first_name', 'last_name', 'email', 'is_active'])
             ->map(fn ($user) => [
                 'user_id' => (int) $user->user_id,
                 'id_number' => $user->id_number,
                 'name' => trim(($user->first_name ?? '').' '.($user->last_name ?? '')),
+                'email' => $user->email,
+                'is_active' => (bool) $user->is_active,
             ]);
 
         return response()->json(['data' => $rows]);
@@ -728,6 +900,7 @@ class PmController extends Controller
             'laborer_id' => ['required', 'integer', Rule::exists('laborer', 'laborer_id')],
             'phase_id' => ['required', 'integer', Rule::exists('project_phases', 'phase_id')],
             'role_on_task' => ['nullable', 'string', 'max:100'],
+            'hourly_rate_ovveride' => ['nullable', 'numeric', 'gt:0', 'max:9999999999999.99'],
         ]);
 
         $phase = DB::table('project_phases')->where('phase_id', $data['phase_id'])->first();
@@ -738,16 +911,25 @@ class PmController extends Controller
             ], 403);
         }
 
-        $duplicate = DB::table('workforce_assignment')
-            ->where('laborer_id', $data['laborer_id'])
-            ->where('phase_id', $data['phase_id'])
-            ->where('status', 'Active')
+        $laborer = DB::table('laborer')->where('laborer_id', $data['laborer_id'])->first();
+
+        if (! $laborer || $laborer->employment_status !== 'Active') {
+            throw ValidationException::withMessages([
+                'laborer_id' => 'Only active laborers can be assigned to a phase.',
+            ]);
+        }
+
+        $duplicate = DB::table('workforce_assignment as wa')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->where('wa.laborer_id', $data['laborer_id'])
+            ->where('ph.project_id', $phase->project_id)
+            ->where('wa.status', 'Active')
             ->exists();
 
         if ($duplicate) {
-            return response()->json([
-                'message' => 'That laborer is already assigned to this phase.',
-            ], 422);
+            throw ValidationException::withMessages([
+                'phase_id' => 'This laborer is already actively assigned to a phase in this project. Remove that assignment before assigning another phase.',
+            ]);
         }
 
         $assignment = WorkforceAssignment::create([
@@ -756,6 +938,7 @@ class PmController extends Controller
             'assigned_at' => now(),
             'role_on_task' => $data['role_on_task'] ?? null,
             'status' => 'Active',
+            'hourly_rate_ovveride' => $data['hourly_rate_ovveride'] ?? null,
             'created_by' => $request->user()->user_id,
             'updated_by' => $request->user()->user_id,
         ]);
@@ -793,6 +976,18 @@ class PmController extends Controller
             ], 422);
         }
 
+        $openTasks = DB::table('site_task')
+            ->where('phase_id', $row->phase_id)
+            ->where('assigned_laborer_id', $row->laborer_id)
+            ->whereIn('status', ['Pending', 'In Progress'])
+            ->count();
+
+        if ($openTasks > 0) {
+            return response()->json([
+                'message' => 'This laborer has open tasks on this phase. Reassign or complete those tasks before removing the assignment.',
+            ], 422);
+        }
+
         WorkforceAssignment::whereKey($assignment)->delete();
 
         return response()->json(['message' => 'Laborer removed from the phase.']);
@@ -823,7 +1018,6 @@ class PmController extends Controller
             'equipment_budget' => $data['equipment_budget'] ?? 0,
             'planned_start' => $data['planned_start'] ?? null,
             'planned_end' => $data['planned_end'] ?? null,
-            'status' => $data['status'] ?? $model->status,
             'required_skill_id' => $data['required_skill_id'] ?? null,
             'updated_by' => $request->user()->user_id,
         ]);
@@ -883,7 +1077,6 @@ class PmController extends Controller
             'equipment_budget' => ['nullable', 'numeric', 'min:0'],
             'planned_start' => ['nullable', 'date'],
             'planned_end' => ['nullable', 'date'],
-            'status' => ['nullable', Rule::in(['Not Started', 'In Progress', 'Completed'])],
             'required_skill_id' => ['nullable', 'integer', Rule::exists('skill', 'skill_id')],
         ]);
     }
@@ -966,21 +1159,18 @@ class PmController extends Controller
             ], 422);
         }
 
-        $cost = round($quantity * (float) $material->unit_cost, 2);
-
-        DB::transaction(function () use ($data, $quantity, $cost, $phase, $material, $request) {
+        DB::transaction(function () use ($data, $quantity, $phase, $material, $request) {
             MaterialUsage::create([
                 'material_id' => $material->material_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'quantity_used' => $quantity,
-                'computed_cost' => $cost,
+                'unit_cost_at_use' => (float) $material->unit_cost,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
 
             $this->adjustMaterialStock((int) $material->material_id, -$quantity);
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
         });
 
         return response()->json([
@@ -1010,12 +1200,10 @@ class PmController extends Controller
             return response()->json(['message' => 'You can only void logs from your own project.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
+        DB::transaction(function () use ($usage) {
             $this->adjustMaterialStock((int) $usage->material_id, (float) $usage->quantity_used);
-            $refund = (float) $usage->computed_cost;
 
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json(['message' => 'Material log voided, stock and budget refunded.']);
@@ -1100,21 +1288,23 @@ class PmController extends Controller
             return response()->json(['message' => 'Unknown equipment.'], 422);
         }
 
-        $hours = round((float) $data['hours_used'], 2);
-        $cost = round($hours * (float) $equipment->hourly_rental_rate, 2);
+        if ($equipment->equipment_status === 'Under Maintenance') {
+            return response()->json([
+                'message' => 'This equipment is under maintenance and cannot be used.',
+            ], 422);
+        }
 
-        DB::transaction(function () use ($data, $hours, $cost, $phase, $equipment, $request) {
+        $hours = round((float) $data['hours_used'], 2);
+        DB::transaction(function () use ($data, $hours, $phase, $equipment, $request) {
             EquipmentUsage::create([
                 'equipment_id' => $equipment->equipment_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'hours_used' => $hours,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => (float) $equipment->hourly_rental_rate,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
-
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
         });
 
         return response()->json([
@@ -1143,11 +1333,8 @@ class PmController extends Controller
             return response()->json(['message' => 'You can only void logs from your own project.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
-            $refund = (float) $usage->computed_cost;
-
+        DB::transaction(function () use ($usage) {
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json(['message' => 'Equipment log voided and the budget refunded.']);
@@ -1211,6 +1398,7 @@ class PmController extends Controller
             ->whereIn('ph.project_id', $ids)
             ->select(
                 'wa.assignment_id',
+                'wa.laborer_id',
                 'ph.phase_id',
                 'l.first_name',
                 'l.last_name',
