@@ -125,7 +125,7 @@ export function PhasesPanel({ project }: { project: PmProject }) {
   const handleDelete = async (phase: PmPhase) => {
     if (
       !window.confirm(
-        `Delete the phase "${phase.phase_name ?? "phase"}"? Phases with laborers or logged usage cannot be deleted.`,
+        `Delete the phase "${phase.phase_name ?? "phase"}"? Only Not Started phases with no tasks, laborers, or logged usage can be deleted.`,
       )
     ) {
       return;
@@ -229,9 +229,11 @@ export function PhasesPanel({ project }: { project: PmProject }) {
           >
             Edit
           </button>
-          <button type="button" className={styles.linkButtonAlt} onClick={() => handleDelete(row)}>
-            Delete
-          </button>
+          {row.status === "Not Started" ? (
+            <button type="button" className={styles.linkButtonAlt} onClick={() => handleDelete(row)}>
+              Delete
+            </button>
+          ) : null}
         </div>
       ),
     },

@@ -1242,6 +1242,12 @@ class SsController extends Controller
             ], 422);
         }
 
+        if ($phase->completion_requested_at !== null) {
+            return response()->json([
+                'message' => 'A completion request is already pending for this phase.',
+            ], 422);
+        }
+
         $model = ProjectPhase::query()->find($id);
 
         if (! $model) {

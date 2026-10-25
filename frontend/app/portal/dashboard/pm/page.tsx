@@ -108,25 +108,8 @@ export default function ProjectManagerOverview() {
     },
   ];
 
-  const deadlineColumns: SaColumn<PmProject>[] = [
-    { key: "code", label: "Project ID", render: (row) => row.code },
-    { key: "name", label: "Project", render: (row) => row.project_name },
-    {
-      key: "deadline",
-      label: "Deadline",
-      render: (row) => row.deadline ?? row.end_date ?? "-",
-    },
-    {
-      key: "status",
-      label: "Status",
-      status: true,
-      render: (row) => <StatusBadge status={row.status} />,
-    },
-  ];
-
   const metrics = dashboard?.metrics;
   const costs = dashboard?.costs;
-  const deadlines = dashboard?.deadlines ?? [];
   const count = (value: number | undefined) =>
     dashboardLoading ? "..." : dashboard ? (value ?? 0) : "-";
   const amount = (value: number | undefined) =>
@@ -254,16 +237,6 @@ export default function ProjectManagerOverview() {
           loading={loading}
           error={error}
           emptyText="No project is assigned to you yet. Create one from the Project page."
-          rowKey={(row) => row.project_id}
-        />
-      </SaPanel>
-
-      <SaPanel title={`Upcoming Deadlines (${deadlines.length})`}>
-        <SaTable
-          columns={deadlineColumns}
-          rows={deadlines}
-          loading={dashboardLoading}
-          emptyText="No upcoming deadlines."
           rowKey={(row) => row.project_id}
         />
       </SaPanel>

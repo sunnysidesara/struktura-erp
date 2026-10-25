@@ -17,11 +17,14 @@ import {
   SaPage,
   SaPanel,
   SaTable,
+  Tabs,
   money,
   useApiData,
   type SaColumn,
 } from "@/app/portal/dashboard/sa/_components/SaPage";
 import styles from "../page.module.css";
+
+type FinanceTab = "breakdown" | "budget";
 
 type ResourceRow = {
   resource: string;
@@ -71,6 +74,8 @@ export default function AdminFinancePage() {
   const projects = useMemo<ApiProject[]>(() => projectData ?? [], [projectData]);
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [tab, setTab] = useState<FinanceTab>("breakdown");
+  const [phaseFilter, setPhaseFilter] = useState("all");
   const [budget, setBudget] = useState<PmBudget | null>(null);
   const [report, setReport] = useState<PmCostReport | null>(null);
   const [phaseCosts, setPhaseCosts] = useState<PmPhaseCost[]>([]);
@@ -96,6 +101,8 @@ export default function AdminFinancePage() {
       return;
     }
 
+    // A project change starts with the complete phase-cost view.
+    setPhaseFilter("all");
     let active = true;
     setDetailLoading(true);
 
@@ -147,6 +154,14 @@ export default function AdminFinancePage() {
         },
       ]
     : [];
+
+  const visiblePhaseCosts = useMemo(
+    () =>
+      phaseFilter === "all"
+        ? phaseCosts
+        : phaseCosts.filter((phase) => String(phase.phase_id) === phaseFilter),
+    [phaseCosts, phaseFilter],
+  );
 
   const value = (amount: number | undefined) =>
     detailLoading ? "..." : money(amount ?? 0);
@@ -231,35 +246,66 @@ export default function AdminFinancePage() {
         spend where project budgets were adjusted manually.
       </p>
 
-      <SaPanel title="Cost Categories">
-        <SaTable
-          columns={categoryColumns}
-          rows={report?.categories ?? []}
-          loading={detailLoading}
-          emptyText="No cost categories for this project."
-          rowKey={(row) => row.category}
-        />
-      </SaPanel>
+      <Tabs
+        items={[
+          { id: "breakdown", label: "Cost Breakdown" },
+          { id: "budget", label: "Budget Overview" },
+        ]}
+        active={tab}
+        onChange={setTab}
+        label="Finance views"
+      />
 
-      <SaPanel title="Resource Budgets">
-        <SaTable
-          columns={resourceColumns}
-          rows={resourceRows}
-          loading={detailLoading}
-          emptyText="No resource budgets for this project."
-          rowKey={(row) => row.resource}
-        />
-      </SaPanel>
+      {tab === "breakdown" ? (
+        <>
+          <SaPanel title="Cost Categories">
+            <SaTable
+              columns={categoryColumns}
+              rows={report?.categories ?? []}
+              loading={detailLoading}
+              emptyText="No cost categories for this project."
+              rowKey={(row) => row.category}
+            />
+          </SaPanel>
 
-      <SaPanel title={`Phase Costs (${phaseCosts.length})`}>
-        <SaTable
-          columns={phaseColumns}
-          rows={phaseCosts}
-          loading={detailLoading}
-          emptyText="No phase costs for this project yet."
-          rowKey={(row) => row.phase_id}
-        />
-      </SaPanel>
+          <SaPanel
+            title={`Phase Costs (${visiblePhaseCosts.length})`}
+            filters={
+              <select
+                value={phaseFilter}
+                onChange={(event) => setPhaseFilter(event.target.value)}
+                disabled={phaseCosts.length === 0}
+                aria-label="Filter phase costs by phase"
+              >
+                <option value="all">All Phases</option>
+                {phaseCosts.map((phase) => (
+                  <option key={phase.phase_id} value={phase.phase_id}>
+                    {phase.sequence}. {phase.phase}
+                  </option>
+                ))}
+              </select>
+            }
+          >
+            <SaTable
+              columns={phaseColumns}
+              rows={visiblePhaseCosts}
+              loading={detailLoading}
+              emptyText="No phase costs for this project yet."
+              rowKey={(row) => row.phase_id}
+            />
+          </SaPanel>
+        </>
+      ) : (
+        <SaPanel title="Resource Budgets">
+          <SaTable
+            columns={resourceColumns}
+            rows={resourceRows}
+            loading={detailLoading}
+            emptyText="No resource budgets for this project."
+            rowKey={(row) => row.resource}
+          />
+        </SaPanel>
+      )}
     </SaPage>
   );
 }

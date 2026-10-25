@@ -4,7 +4,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   ApiError,
   createPmPhase,
+  listPmSkills,
   updatePmPhase,
+  type ApiSkill,
   type PmPhase,
   type PmProject,
 } from "@/lib/api";
@@ -19,6 +21,7 @@ type Values = {
   equipment: string;
   start: string;
   end: string;
+  skillId: string;
 };
 
 const EMPTY: Values = {
@@ -30,6 +33,7 @@ const EMPTY: Values = {
   equipment: "",
   start: "",
   end: "",
+  skillId: "",
 };
 
 function dateOnly(value: string | null | undefined): string {
@@ -53,7 +57,11 @@ export function PhaseModal({
 }) {
   const [values, setValues] = useState<Values>(EMPTY);
   const [nameError, setNameError] = useState("");
+  const [dateError, setDateError] = useState("");
+  const [skillError, setSkillError] = useState("");
   const [formError, setFormError] = useState("");
+  const [skills, setSkills] = useState<ApiSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -72,13 +80,51 @@ export function PhaseModal({
             equipment: phase.equipment_budget === null || phase.equipment_budget === undefined ? "" : String(phase.equipment_budget),
             start: dateOnly(phase.planned_start),
             end: dateOnly(phase.planned_end),
+            skillId:
+              phase.required_skill_id === null || phase.required_skill_id === undefined
+                ? ""
+                : String(phase.required_skill_id),
           }
         : EMPTY,
     );
     setNameError("");
+    setDateError("");
+    setSkillError("");
     setFormError("");
     setSaving(false);
   }, [open, phase]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    let active = true;
+    setSkillsLoading(true);
+
+    listPmSkills()
+      .then((rows) => {
+        if (active) {
+          setSkills(rows);
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setSkillError(
+            err instanceof Error ? err.message : "Could not load the skill list.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setSkillsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   const update = (key: keyof Values, value: string) => {
     setValues((current) => ({ ...current, [key]: value }));
@@ -88,10 +134,30 @@ export function PhaseModal({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setNameError("");
+    setDateError("");
+    setSkillError("");
     setFormError("");
 
     if (!values.name.trim()) {
       setNameError("Phase name is required.");
+      return;
+    }
+
+    if (values.start && values.end && values.end < values.start) {
+      setDateError("Planned end date cannot be before the planned start date.");
+      return;
+    }
+
+    const projectStart = dateOnly(project.start_date);
+    const projectEnd = dateOnly(project.end_date);
+
+    if (values.start && projectStart && values.start < projectStart) {
+      setDateError("Planned start date cannot be before the project start date.");
+      return;
+    }
+
+    if (values.end && projectEnd && values.end > projectEnd) {
+      setDateError("Planned end date cannot be after the project end date.");
       return;
     }
 
@@ -104,6 +170,7 @@ export function PhaseModal({
       equipment_budget: values.equipment === "" ? 0 : Number(values.equipment),
       planned_start: values.start || null,
       planned_end: values.end || null,
+      required_skill_id: values.skillId === "" ? null : Number(values.skillId),
     };
 
     setSaving(true);
@@ -122,6 +189,16 @@ export function PhaseModal({
 
         if (first("phase_name")) {
           setNameError(first("phase_name") as string);
+          return;
+        }
+        if (first("planned_start") || first("planned_end")) {
+          setDateError(
+            (first("planned_start") ?? first("planned_end")) as string,
+          );
+          return;
+        }
+        if (first("required_skill_id")) {
+          setSkillError(first("required_skill_id") as string);
           return;
         }
       }
@@ -169,6 +246,35 @@ export function PhaseModal({
           onChange={(event) => update("description", event.target.value)}
           placeholder="What this phase covers"
         />
+      </ModalField>
+
+      <ModalField
+        label="Required Skill"
+        htmlFor="phase-skill"
+        error={skillError}
+        hint="Optional; used for the PM skill-match recommendation."
+      >
+        <select
+          id="phase-skill"
+          value={values.skillId}
+          onChange={(event) => update("skillId", event.target.value)}
+          disabled={skillsLoading}
+        >
+          <option value="">
+            {skillsLoading ? "Loading skills..." : "No specific skill"}
+          </option>
+          {phase?.required_skill_id &&
+          !skills.some((skill) => skill.skill_id === phase.required_skill_id) ? (
+            <option value={String(phase.required_skill_id)}>
+              {phase.required_skill ?? "Current skill"}
+            </option>
+          ) : null}
+          {skills.map((skill) => (
+            <option key={skill.skill_id} value={skill.skill_id}>
+              {skill.skill_name}
+            </option>
+          ))}
+        </select>
       </ModalField>
 
       <ModalGrid>
@@ -226,7 +332,7 @@ export function PhaseModal({
             onChange={(event) => update("start", event.target.value)}
           />
         </ModalField>
-        <ModalField label="Planned End" htmlFor="phase-end">
+        <ModalField label="Planned End" htmlFor="phase-end" error={dateError}>
           <input
             id="phase-end"
             type="date"

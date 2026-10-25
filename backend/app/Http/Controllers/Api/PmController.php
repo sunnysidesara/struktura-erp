@@ -12,6 +12,7 @@ use App\Models\MaterialUsage;
 use App\Models\WorkforceAssignment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -371,6 +372,8 @@ class PmController extends Controller
     public function storeProject(Request $request): JsonResponse
     {
         $data = $this->validateProject($request, true);
+        $this->assertProjectDates($data);
+
         $userId = $request->user()->user_id;
         $approved = (float) ($data['approved_budget'] ?? 0);
         $materials = array_key_exists('materials_budget', $data) && $data['materials_budget'] !== null
@@ -421,6 +424,7 @@ class PmController extends Controller
         }
 
         $data = $this->validateProject($request);
+        $this->assertProjectDates($data, $project);
 
         $currentApproved = (float) $project->approved_budget;
         $approved = array_key_exists('approved_budget', $data) && $data['approved_budget'] !== null
@@ -619,6 +623,50 @@ class PmController extends Controller
         }
     }
 
+    private function assertProjectDates(array $data, ?Project $project = null): void
+    {
+        $start = array_key_exists('start_date', $data)
+            ? $data['start_date']
+            : $project?->start_date;
+        $end = array_key_exists('end_date', $data)
+            ? $data['end_date']
+            : $project?->end_date;
+
+        if ($start && $end && Carbon::parse($end)->lt(Carbon::parse($start))) {
+            throw ValidationException::withMessages([
+                'end_date' => ['Target end date cannot be before the start date.'],
+            ]);
+        }
+    }
+
+    private function assertPhaseDates(array $data, Project $project, ?ProjectPhase $phase = null): void
+    {
+        $start = array_key_exists('planned_start', $data)
+            ? $data['planned_start']
+            : $phase?->planned_start;
+        $end = array_key_exists('planned_end', $data)
+            ? $data['planned_end']
+            : $phase?->planned_end;
+
+        if ($start && $end && Carbon::parse($end)->lt(Carbon::parse($start))) {
+            throw ValidationException::withMessages([
+                'planned_end' => ['Planned end date cannot be before the planned start date.'],
+            ]);
+        }
+
+        if ($start && $project->start_date && Carbon::parse($start)->lt($project->start_date)) {
+            throw ValidationException::withMessages([
+                'planned_start' => ['Planned start date cannot be before the project start date.'],
+            ]);
+        }
+
+        if ($end && $project->end_date && Carbon::parse($end)->gt($project->end_date)) {
+            throw ValidationException::withMessages([
+                'planned_end' => ['Planned end date cannot be after the project end date.'],
+            ]);
+        }
+    }
+
     private function validateProject(Request $request, bool $supervisorRequired = false): array
     {
         $supervisorRoleId = DB::table('role')
@@ -661,6 +709,9 @@ class PmController extends Controller
         if (! in_array($projectId, $ids, true)) {
             return response()->json(['message' => 'You cannot add phases to that project.'], 403);
         }
+
+        $project = Project::findOrFail($projectId);
+        $this->assertPhaseDates($data, $project);
 
         // Eloquent (not the query builder) so the audit observer fires.
         $phase = ProjectPhase::create([
@@ -1008,17 +1059,34 @@ class PmController extends Controller
 
         $data = $this->validatePhase($request);
         $model = ProjectPhase::findOrFail($phase);
+        $this->assertPhaseDates($data, Project::findOrFail($model->project_id), $model);
 
         $model->update([
             'project_name' => $data['phase_name'],
-            'description' => $data['description'] ?? null,
-            'sequence_no' => $data['sequence_no'] ?? null,
-            'project_cost' => $data['project_cost'] ?? null,
-            'materials_budget' => $data['materials_budget'] ?? 0,
-            'equipment_budget' => $data['equipment_budget'] ?? 0,
-            'planned_start' => $data['planned_start'] ?? null,
-            'planned_end' => $data['planned_end'] ?? null,
-            'required_skill_id' => $data['required_skill_id'] ?? null,
+            'description' => array_key_exists('description', $data)
+                ? $data['description']
+                : $model->description,
+            'sequence_no' => array_key_exists('sequence_no', $data)
+                ? $data['sequence_no']
+                : $model->sequence_no,
+            'project_cost' => array_key_exists('project_cost', $data)
+                ? $data['project_cost']
+                : $model->project_cost,
+            'materials_budget' => array_key_exists('materials_budget', $data)
+                ? ($data['materials_budget'] ?? 0)
+                : $model->materials_budget,
+            'equipment_budget' => array_key_exists('equipment_budget', $data)
+                ? ($data['equipment_budget'] ?? 0)
+                : $model->equipment_budget,
+            'planned_start' => array_key_exists('planned_start', $data)
+                ? $data['planned_start']
+                : $model->planned_start,
+            'planned_end' => array_key_exists('planned_end', $data)
+                ? $data['planned_end']
+                : $model->planned_end,
+            'required_skill_id' => array_key_exists('required_skill_id', $data)
+                ? $data['required_skill_id']
+                : $model->required_skill_id,
             'updated_by' => $request->user()->user_id,
         ]);
 
@@ -1041,11 +1109,42 @@ class PmController extends Controller
             ], 403);
         }
 
+        if ($row->status !== 'Not Started') {
+            return response()->json([
+                'message' => 'Only a Not Started phase can be deleted.',
+            ], 422);
+        }
+
+        if ($row->completion_requested_at) {
+            return response()->json([
+                'message' => 'This phase has a pending completion request and cannot be deleted.',
+            ], 422);
+        }
+
         $assignments = DB::table('workforce_assignment')->where('phase_id', $phase)->count();
 
         if ($assignments > 0) {
             return response()->json([
                 'message' => 'This phase still has laborers assigned and cannot be deleted.',
+            ], 422);
+        }
+
+        $tasks = DB::table('site_task')->where('phase_id', $phase)->count();
+
+        if ($tasks > 0) {
+            return response()->json([
+                'message' => 'This phase has site tasks and cannot be deleted.',
+            ], 422);
+        }
+
+        $laborLogs = DB::table('labor_hour_log as lhl')
+            ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'lhl.assignment_id')
+            ->where('wa.phase_id', $phase)
+            ->count();
+
+        if ($laborLogs > 0) {
+            return response()->json([
+                'message' => 'This phase has labor-hour history and cannot be deleted.',
             ], 422);
         }
 
