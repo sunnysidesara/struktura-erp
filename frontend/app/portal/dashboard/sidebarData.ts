@@ -196,12 +196,6 @@ const pmSidebar: SidebarSection[] = [
         label: "Equipment",
         href: "/portal/dashboard/pm/equipment",
       },
-      {
-        type: "link",
-        icon: "user-check",
-        label: "Roles",
-        href: "/portal/dashboard/roles",
-      },
     ],
   },
 ];
@@ -250,12 +244,6 @@ const ssSidebar: SidebarSection[] = [
           { label: "Materials Log", href: "/portal/dashboard/ss/logs/materials" },
           { label: "Equipment Log", href: "/portal/dashboard/ss/logs/equipment" },
         ],
-      },
-      {
-        type: "link",
-        icon: "user-check",
-        label: "Roles",
-        href: "/portal/dashboard/roles",
       },
     ],
   },

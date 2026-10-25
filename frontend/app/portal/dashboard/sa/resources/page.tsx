@@ -55,6 +55,9 @@ export default function ResourcesPage() {
     reload();
   };
 
+  const hasUsage = (row: ApiEquipment | ApiMaterial) =>
+    (row.usage_count ?? 0) > 0;
+
   const handleDelete = async (
     kind: "equipment" | "material",
     row: ApiEquipment | ApiMaterial,
@@ -178,9 +181,14 @@ export default function ResourcesPage() {
             type="button"
             className={styles.linkButtonAlt}
             onClick={() => handleDelete("equipment", row)}
-            disabled={deletingId !== null}
+            disabled={deletingId !== null || hasUsage(row)}
+            title={hasUsage(row) ? "Equipment with usage history cannot be deleted." : undefined}
           >
-            {deletingId === `equipment-${row.equipment_id}` ? "Deleting..." : "Delete"}
+            {deletingId === `equipment-${row.equipment_id}`
+              ? "Deleting..."
+              : hasUsage(row)
+                ? "Has usage"
+                : "Delete"}
           </button>
         </div>
       ),
@@ -208,9 +216,14 @@ export default function ResourcesPage() {
             type="button"
             className={styles.linkButtonAlt}
             onClick={() => handleDelete("material", row)}
-            disabled={deletingId !== null}
+            disabled={deletingId !== null || hasUsage(row)}
+            title={hasUsage(row) ? "Material with usage history cannot be deleted." : undefined}
           >
-            {deletingId === `material-${row.material_id}` ? "Deleting..." : "Delete"}
+            {deletingId === `material-${row.material_id}`
+              ? "Deleting..."
+              : hasUsage(row)
+                ? "Has usage"
+                : "Delete"}
           </button>
         </div>
       ),

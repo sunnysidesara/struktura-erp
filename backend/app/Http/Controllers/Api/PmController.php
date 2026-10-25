@@ -1160,17 +1160,31 @@ class PmController extends Controller
         }
 
         DB::transaction(function () use ($data, $quantity, $phase, $material, $request) {
+            $lockedMaterial = Material::query()->lockForUpdate()->find($material->material_id);
+
+            if (! $lockedMaterial) {
+                throw ValidationException::withMessages([
+                    'material_id' => 'Unknown material.',
+                ]);
+            }
+
+            if ($quantity > (float) $lockedMaterial->stock_quantity) {
+                throw ValidationException::withMessages([
+                    'quantity_used' => 'Only '.$this->stockLabel($lockedMaterial).' of '.$lockedMaterial->material_name.' remain in stock.',
+                ]);
+            }
+
             MaterialUsage::create([
-                'material_id' => $material->material_id,
+                'material_id' => $lockedMaterial->material_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'quantity_used' => $quantity,
-                'unit_cost_at_use' => (float) $material->unit_cost,
+                'unit_cost_at_use' => (float) $lockedMaterial->unit_cost,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
 
-            $this->adjustMaterialStock((int) $material->material_id, -$quantity);
+            $this->adjustMaterialStock((int) $lockedMaterial->material_id, -$quantity);
         });
 
         return response()->json([

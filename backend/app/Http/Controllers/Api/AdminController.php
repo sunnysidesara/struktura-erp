@@ -190,8 +190,26 @@ class AdminController extends Controller
     public function resources(): JsonResponse
     {
         return response()->json([
-            'equipment' => DB::table('equipment')->orderBy('equipment_name')->get(),
-            'materials' => DB::table('materials')->orderBy('material_name')->get(),
+            'equipment' => DB::table('equipment as e')
+                ->select('e.*')
+                ->selectRaw('(SELECT COUNT(*) FROM equipment_usage eu WHERE eu.equipment_id = e.equipment_id) as usage_count')
+                ->orderBy('e.equipment_name')
+                ->get()
+                ->map(function ($row) {
+                    $row->usage_count = (int) $row->usage_count;
+
+                    return $row;
+                }),
+            'materials' => DB::table('materials as m')
+                ->select('m.*')
+                ->selectRaw('(SELECT COUNT(*) FROM material_usage mu WHERE mu.material_id = m.material_id) as usage_count')
+                ->orderBy('m.material_name')
+                ->get()
+                ->map(function ($row) {
+                    $row->usage_count = (int) $row->usage_count;
+
+                    return $row;
+                }),
             'suppliers' => DB::table('suppliers')->orderBy('supplier_name')->get(),
         ]);
     }
@@ -311,6 +329,14 @@ class AdminController extends Controller
      */
     private function materialData(Request $request, ?int $materialId = null): array
     {
+        if (is_string($request->input('material_name'))) {
+            $request->merge(['material_name' => trim($request->input('material_name'))]);
+        }
+
+        if (is_string($request->input('unit_of_measure'))) {
+            $request->merge(['unit_of_measure' => trim($request->input('unit_of_measure'))]);
+        }
+
         return $request->validate([
             'material_name' => [
                 'required', 'string', 'max:255',
@@ -327,6 +353,14 @@ class AdminController extends Controller
      */
     private function equipmentData(Request $request, ?int $equipmentId = null): array
     {
+        if (is_string($request->input('equipment_name'))) {
+            $request->merge(['equipment_name' => trim($request->input('equipment_name'))]);
+        }
+
+        if (is_string($request->input('equipment_type'))) {
+            $request->merge(['equipment_type' => trim($request->input('equipment_type'))]);
+        }
+
         return $request->validate([
             'equipment_name' => [
                 'required', 'string', 'max:255',

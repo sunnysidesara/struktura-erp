@@ -105,6 +105,18 @@ export function EquipmentTab({ projectId }: { projectId: number }) {
       setFormError("Choose the usage date.");
       return;
     }
+    if (data?.server_date && date > data.server_date) {
+      setFormError("Usage date cannot be in the future.");
+      return;
+    }
+    if (value > 24) {
+      setFormError("Equipment usage cannot exceed 24 hours per entry.");
+      return;
+    }
+    if (selected?.status === "Under Maintenance") {
+      setFormError("This equipment is under maintenance and cannot be used.");
+      return;
+    }
 
     setSaving(true);
     const wasEditing = editingLog !== null;

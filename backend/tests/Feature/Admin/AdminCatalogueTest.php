@@ -20,6 +20,7 @@ class AdminCatalogueTest extends TestCase
             'equipment',
             'material_usage',
             'equipment_usage',
+            'suppliers',
             'audit_logs',
         ] as $table) {
             Schema::dropIfExists($table);
@@ -53,6 +54,16 @@ class AdminCatalogueTest extends TestCase
         Schema::create('equipment_usage', function (Blueprint $table) {
             $table->increments('equipment_usage_id');
             $table->unsignedBigInteger('equipment_id');
+        });
+
+        Schema::create('suppliers', function (Blueprint $table) {
+            $table->increments('supplier_id');
+            $table->string('supplier_name');
+            $table->string('contact_name')->nullable();
+            $table->string('contact_num')->nullable();
+            $table->string('city')->nullable();
+            $table->string('state_province')->nullable();
+            $table->string('country')->nullable();
         });
 
         Schema::create('audit_logs', function (Blueprint $table) {
@@ -200,6 +211,39 @@ class AdminCatalogueTest extends TestCase
         ]))
             ->assertCreated()
             ->assertJsonPath('data.equipment_status', 'Available');
+    }
+
+    public function test_catalogue_names_are_trimmed_and_resources_include_usage_counts(): void
+    {
+        $material = $this->postJson('/api/v1/admin/materials', $this->materialPayload([
+            'material_name' => '  Test Rebar  ',
+            'unit_of_measure' => '  pieces  ',
+        ]))
+            ->assertCreated()
+            ->assertJsonPath('data.material_name', 'Test Rebar')
+            ->assertJsonPath('data.unit_of_measure', 'pieces');
+
+        $equipment = $this->postJson('/api/v1/admin/equipment', $this->equipmentPayload([
+            'equipment_name' => '  Test Excavator  ',
+            'equipment_type' => '  Excavator  ',
+        ]))
+            ->assertCreated()
+            ->assertJsonPath('data.equipment_name', 'Test Excavator')
+            ->assertJsonPath('data.equipment_type', 'Excavator');
+
+        DB::table('material_usage')->insert([
+            'material_id' => $material->json('data.material_id'),
+        ]);
+        DB::table('equipment_usage')->insert([
+            'equipment_id' => $equipment->json('data.equipment_id'),
+        ]);
+
+        $this->getJson('/api/v1/admin/resources')
+            ->assertOk()
+            ->assertJsonPath('materials.0.material_name', 'Test Rebar')
+            ->assertJsonPath('materials.0.usage_count', 1)
+            ->assertJsonPath('equipment.0.equipment_name', 'Test Excavator')
+            ->assertJsonPath('equipment.0.usage_count', 1);
     }
 
     public function test_non_admin_cannot_manage_the_catalogue(): void

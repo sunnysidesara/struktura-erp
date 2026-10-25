@@ -290,8 +290,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     const roleBase = rolePath[storedUser.role];
     const isAccountRoute =
       pathname === "/portal/dashboard/profile" ||
-      pathname === "/portal/dashboard/settings" ||
-      pathname === "/portal/dashboard/roles";
+      pathname === "/portal/dashboard/settings";
     const isRoleRoute =
       pathname === roleBase || pathname.startsWith(`${roleBase}/`);
 
@@ -713,7 +712,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               {section.items.map((item) => {
                 if (item.type === "link") {
                   const isActive = pathname === item.href;
-                  const isLocked = navLocked && item.href !== rolePath[user.role] && item.href !== "/portal/dashboard/roles";
+                  const isLocked = navLocked && item.href !== rolePath[user.role];
 
                   if (isLocked) {
                     return (

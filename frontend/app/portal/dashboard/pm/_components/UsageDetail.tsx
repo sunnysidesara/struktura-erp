@@ -41,6 +41,7 @@ type CatalogOption = {
   detail: string;
   stock: number | null;
   unit: string | null;
+  status: string | null;
 };
 
 /** Local calendar date for the date input's initial value and max. */
@@ -316,6 +317,7 @@ function UsageModal({
               detail: `${money(item.unit_cost)} each · ${item.stock_quantity} ${item.unit_of_measure ?? "unit(s)"} in stock`,
               stock: item.stock_quantity,
               unit: item.unit_of_measure,
+              status: null,
             }),
           ),
         )
@@ -327,6 +329,7 @@ function UsageModal({
               detail: `${money(item.hourly_rental_rate)}/hour · ${item.equipment_status ?? "Available"}`,
               stock: null,
               unit: null,
+              status: item.equipment_status,
             }),
           ),
         );
@@ -364,6 +367,11 @@ function UsageModal({
 
     if (!itemId || !selectedItem) {
       setItemError(`Select a ${itemLabel.toLowerCase()}.`);
+      return;
+    }
+
+    if (!isMaterial && selectedItem.status === "Under Maintenance") {
+      setItemError("This equipment is under maintenance and cannot be used.");
       return;
     }
 

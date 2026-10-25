@@ -105,6 +105,16 @@ export function MaterialsTab({ projectId }: { projectId: number }) {
       setFormError("Choose the usage date.");
       return;
     }
+    if (data?.server_date && date > data.server_date) {
+      setFormError("Usage date cannot be in the future.");
+      return;
+    }
+    if (editingLog === null && selected && qty > selected.stock) {
+      setFormError(
+        `Only ${selected.stock} ${selected.unit ?? "unit(s)"} of ${selected.name} remain in stock.`,
+      );
+      return;
+    }
 
     setSaving(true);
     const wasEditing = editingLog !== null;
