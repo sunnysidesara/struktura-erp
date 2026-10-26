@@ -369,7 +369,7 @@ export function CreateUserModal({
               </span>
             ) : (
               <span className={styles.hint} id="create-user-password-hint">
-                Minimum of 8 characters.
+                Minimum of 12 characters.
               </span>
             )}
           </div>
