@@ -59,7 +59,7 @@ function validate(values: Values): FieldErrors {
   if (!values.password) {
     errors.password = "Password is required.";
   } else if (values.password.length < 8) {
-    errors.password = "Password must be at least 8 characters.";
+    errors.password = "Password must be at least 12 characters.";
   }
 
   if (!values.confirmPassword) {
@@ -76,7 +76,10 @@ function validate(values: Values): FieldErrors {
 }
 
 /** Split "Jane Dela Cruz" at the last space; the API stores names separately. */
-function splitFullName(value: string): { first_name: string; last_name: string } {
+function splitFullName(value: string): {
+  first_name: string;
+  last_name: string;
+} {
   const parts = value.trim().split(/\s+/);
 
   return {
@@ -175,7 +178,9 @@ export function CreateUserModal({
       return;
     }
 
-    const roleOption = ROLE_OPTIONS.find((option) => option.label === values.role);
+    const roleOption = ROLE_OPTIONS.find(
+      (option) => option.label === values.role,
+    );
     const role = roleOption
       ? roles.find((item) => item.role_name === roleOption.roleName)
       : undefined;
@@ -345,7 +350,7 @@ export function CreateUserModal({
               type="password"
               value={values.password}
               onChange={(event) => update("password", event.target.value)}
-              placeholder="At least 8 characters"
+              placeholder="At least 12 characters"
               autoComplete="new-password"
               aria-invalid={errors.password ? true : undefined}
               aria-describedby={
@@ -377,7 +382,9 @@ export function CreateUserModal({
               id="create-user-confirm-password"
               type="password"
               value={values.confirmPassword}
-              onChange={(event) => update("confirmPassword", event.target.value)}
+              onChange={(event) =>
+                update("confirmPassword", event.target.value)
+              }
               placeholder="Re-enter the password"
               autoComplete="new-password"
               aria-invalid={errors.confirmPassword ? true : undefined}
