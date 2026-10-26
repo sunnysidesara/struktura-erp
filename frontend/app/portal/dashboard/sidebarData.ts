@@ -68,7 +68,7 @@ const saSidebar: SidebarSection[] = [
       {
         type: "group",
         icon: "users",
-        label: "Users",
+        label: "Accounts",
         id: "users",
         children: [
           { label: "Directory", href: "/portal/dashboard/sa/users" },
@@ -229,8 +229,14 @@ const ssSidebar: SidebarSection[] = [
         id: "ss-logs",
         children: [
           { label: "Workers Log", href: "/portal/dashboard/ss/logs/workers" },
-          { label: "Materials Log", href: "/portal/dashboard/ss/logs/materials" },
-          { label: "Equipment Log", href: "/portal/dashboard/ss/logs/equipment" },
+          {
+            label: "Materials Log",
+            href: "/portal/dashboard/ss/logs/materials",
+          },
+          {
+            label: "Equipment Log",
+            href: "/portal/dashboard/ss/logs/equipment",
+          },
         ],
       },
     ],
@@ -249,5 +255,3 @@ export function getSidebarData(role: "SA" | "PM" | "SS"): SidebarSection[] {
       return [];
   }
 }
-
-
