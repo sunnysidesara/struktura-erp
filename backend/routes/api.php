@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\SsController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\UserController;
 use App\Models\Role;
+use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,6 +23,62 @@ use Illuminate\Support\Facades\Route;
 | via Sanctum bearer tokens.
 |
 */
+
+/*
+|--------------------------------------------------------------------------
+| TEMPORARY deployment diagnostic (remove once Render -> Aiven is healthy)
+|--------------------------------------------------------------------------
+|
+| Explains why the database connection fails without leaking the password.
+| The throttle middleware is bypassed because the rate limiter itself uses
+| the database cache store - the very thing being tested.
+|
+*/
+Route::get('/_diag', function () {
+    $conn = (array) config('database.connections.mysql', []);
+    $ca = $conn['options'][PDO::MYSQL_ATTR_SSL_CA] ?? null;
+    $password = (string) ($conn['password'] ?? '');
+
+    $report = [
+        'environment' => app()->environment(),
+        'app_key_set' => filled(config('app.key')),
+        'db_host' => $conn['host'] ?? null,
+        'db_port' => $conn['port'] ?? null,
+        'db_database' => $conn['database'] ?? null,
+        'db_username' => $conn['username'] ?? null,
+        'db_password_set' => $password !== '',
+        'db_password_length' => strlen($password),
+        'db_password_has_edge_space' => $password !== trim($password),
+        'ssl_ca' => $ca,
+        'ssl_ca_exists' => $ca ? file_exists($ca) : null,
+    ];
+
+    try {
+        DB::connection()->getPdo();
+        DB::select('select 1');
+        $report['db'] = 'ok';
+    } catch (\Throwable $e) {
+        $message = $e->getMessage();
+        $lower = strtolower($message);
+
+        $report['db'] = 'fail';
+        $report['exception'] = class_basename($e);
+        $report['sqlstate'] = $e instanceof \PDOException ? ($e->errorInfo[0] ?? null) : null;
+        $report['driver_code'] = $e instanceof \PDOException ? ($e->errorInfo[1] ?? null) : null;
+        $report['message'] = mb_substr($message, 0, 300);
+        $report['kind'] = match (true) {
+            str_contains($lower, 'timed out'), str_contains($lower, 'timeout') => 'timeout',
+            str_contains($lower, 'refused') => 'connection_refused',
+            str_contains($lower, 'getaddrinfo'), str_contains($lower, 'name or service') => 'dns',
+            str_contains($lower, 'certificate'), str_contains($lower, 'ssl') => 'tls',
+            str_contains($lower, 'access denied') => 'bad_credentials',
+            str_contains($lower, 'unknown database') => 'bad_database',
+            default => 'other',
+        };
+    }
+
+    return response()->json($report);
+})->withoutMiddleware(ThrottleRequests::class);
 
 Route::prefix('v1')->group(function () {
     // ---- Public ----
