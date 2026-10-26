@@ -1,0 +1,2 @@
+# Keep shell scripts (container entrypoints) LF so they run inside Linux images.
+*.sh text eol=lf
