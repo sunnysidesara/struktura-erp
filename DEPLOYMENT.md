@@ -149,8 +149,8 @@ you really need them (it widens access).
 | Symptom | Cause / fix |
 | --- | --- |
 | 500 on every request | `APP_KEY` missing, or `storage`/`bootstrap/cache` not writable. Check Render logs (stderr). |
-| `SQLSTATE[HY000] [2002]` | Wrong DB host/port, or Aiven firewall. Confirm the host ends with `aivencloud.com` and the port matches. |
-| TLS / certificate error to MySQL | Keep `MYSQL_ATTR_SSL_CA=/etc/ssl/certs/ca-certificates.crt` (bundled in the image). |
+| `SQLSTATE[HY000] [2002]` | Wrong DB host/port, or Aiven firewall. Confirm the host ends with `aivencloud.com` and the port matches. A **timeout** means Aiven is blocking Render: Aiven console → service → **Trusted IPs** → allow `0.0.0.0/0`. |
+| TLS / certificate error to MySQL | Aiven uses a **project-private CA**, so the public bundle alone is not enough. `backend/docker/ca.pem` is copied to `/usr/local/share/ca-certificates/aiven-ca.crt` at build time and `update-ca-certificates` folds it into `/etc/ssl/certs/ca-certificates.crt` (the value of `MYSQL_ATTR_SSL_CA`). If Aiven rotates the CA, replace that file and redeploy. |
 | CORS error in the browser | `CORS_ALLOWED_ORIGINS` must match the exact origin (scheme + host, no slash). Redeploy after editing. |
 | First request takes ~40 s | Render free instances sleep after idle; the first request wakes them. The loading screen covers it. |
 | Login works locally but not online | `NEXT_PUBLIC_API_BASE_URL` must be the public Render URL ending in `/api/v1`; redeploy Vercel after changing it. |

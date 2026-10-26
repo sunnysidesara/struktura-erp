@@ -15,6 +15,13 @@ RUN apt-get update \
     && a2enmod rewrite headers \
     && rm -rf /var/lib/apt/lists/*
 
+# Aiven MySQL presents a project-private CA that is NOT part of the public
+# trust store, so TLS verification fails with the stock bundle. Installing the
+# Aiven CA here keeps MYSQL_ATTR_SSL_CA=/etc/ssl/certs/ca-certificates.crt valid
+# without needing a Render secret file.
+COPY docker/ca.pem /usr/local/share/ca-certificates/aiven-ca.crt
+RUN update-ca-certificates
+
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
