@@ -20,10 +20,15 @@ const contentSecurityPolicy = [
   "default-src 'self'",
   // Next injects inline bootstrap scripts; dev additionally needs eval for HMR.
   `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline'",
+  // app/globals.css imports the DM Sans / Manrope stylesheet from Google Fonts,
+  // so the stylesheet origin must be allowed or the fonts silently fall back.
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  `connect-src 'self' ${apiOrigin} ws: wss:`,
+  // The @font-face files themselves are served from fonts.gstatic.com.
+  "font-src 'self' data: https://fonts.gstatic.com",
+  // ws:/wss: is only needed by the dev HMR socket. Production traffic is HTTPS
+  // to apiOrigin only, so a stray WebSocket cannot slip past connect-src.
+  `connect-src 'self' ${apiOrigin}${isProduction ? "" : " ws: wss:"}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

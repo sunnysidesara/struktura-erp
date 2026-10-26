@@ -1,0 +1,27 @@
+# Railway build/deploy definition for the Laravel API.
+#
+# Railway injects $PORT; the serve command below binds to it on 0.0.0.0 so the
+# platform health check can reach the container. Migrations run on every start
+# (idempotent: already-applied migrations are skipped).
+#
+# The build phase caches config/routes, and the start command re-caches them so
+# the cached config always reflects the runtime service variables (the build
+# container may not receive APP_KEY / DB_* depending on Railway's settings).
+#
+# Required Railway variables (see SECURITY.md > Production checklist):
+#   APP_ENV=production, APP_DEBUG=false, APP_URL=https://<service-domain>,
+#   APP_KEY=base64:..., DB_* (Aiven), CORS_ALLOWED_ORIGINS=https://<vercel-app>,
+#   TRUSTED_PROXIES=*, SESSION_SECURE_COOKIE=true.
+# Leave MYSQL_ATTR_SSL_CA unset so config/database.php uses storage/ca.pem.
+
+[phases.setup]
+nixPkgs = ["php82", "php82Packages.composer", "php82Extensions.pdo_mysql", "php82Extensions.mbstring", "php82Extensions.openssl"]
+
+[phases.install]
+cmds = ["composer install --no-dev --optimize-autoloader"]
+
+[phases.build]
+cmds = ["php artisan config:cache", "php artisan route:cache"]
+
+[start]
+cmd = "php artisan config:cache && php artisan route:cache && php artisan migrate --force && php artisan serve --host 0.0.0.0 --port ${PORT:-8000}"

@@ -13,6 +13,15 @@ export function getApiBaseUrl(): string {
     return API_BASE_URL_OVERRIDE;
   }
 
+  // A deployed build must never guess: next.config.ts derives the CSP
+  // connect-src from the same variable, so falling back to localhost/LAN would
+  // hide a real misconfiguration behind a generic "Cannot reach the server".
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_API_BASE_URL is not configured for this deployment.",
+    );
+  }
+
   if (typeof window !== "undefined") {
     return `http://${window.location.hostname}:8000/api/v1`;
   }

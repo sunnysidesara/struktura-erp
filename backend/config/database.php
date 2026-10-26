@@ -58,7 +58,11 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                // Aiven (and most cloud MySQL) requires TLS. Honour an explicit
+                // path, otherwise fall back to the CA bundle shipped with the
+                // project so the checkout works on any machine/drive letter.
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA')
+                    ?: (is_file(storage_path('ca.pem')) ? storage_path('ca.pem') : null),
             ]) : [],
             'timezone' => '+08:00',
         ],
@@ -79,7 +83,9 @@ return [
             'strict' => true,
             'engine' => null,
             'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+                // Same TLS fallback as the mysql connection above.
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA')
+                    ?: (is_file(storage_path('ca.pem')) ? storage_path('ca.pem') : null),
             ]) : [],
         ],
 

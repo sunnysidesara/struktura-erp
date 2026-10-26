@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 const partners = [
@@ -9,24 +10,6 @@ const partners = [
   "SkyLogistics",
   "Apex Builders",
   "Vertex Engineering",
-];
-
-const team = [
-  {
-    name: "Jenny Lood",
-    role: "Lead Database Administrator & Cloud Infrastructure Engineer",
-    image: "/assets/jl.jpg",
-  },
-  {
-    name: "Christian Angoy",
-    role: "Lead Database Programmer & Query Optimization Engineer",
-    image: "/assets/christian.jpg",
-  },
-  {
-    name: "Sara Hinayon",
-    role: "Frontend / UI Connector & Git Workflow Administrator",
-    image: "/assets/sara.png",
-  },
 ];
 
 function ArrowIcon() {
@@ -71,19 +54,25 @@ export default function Home() {
 
       <main>
         <section className="hero" id="top">
-          <img
+          <Image
             className="hero-banner"
             src="/assets/struktura-banner.png"
             alt="Struktura — Construction Resource and Cost Management System"
+            width={4800}
+            height={1500}
+            sizes="86vw"
+            priority
           />
           <h1></h1>
         </section>
 
         <section className="features" id="features">
           <div className="feature-image">
-            <img
+            <Image
               src="/assets/man-up.png"
               alt="Construction worker giving a thumbs up"
+              width={1020}
+              height={1020}
             />
           </div>
           <div className="feature-copy">
