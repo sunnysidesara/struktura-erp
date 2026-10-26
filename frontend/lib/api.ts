@@ -4,6 +4,8 @@
 // the same build works on http://localhost:3000 and on a LAN address such as
 // http://172.16.0.2:3000. Set NEXT_PUBLIC_API_BASE_URL to pin an explicit URL.
 
+import { beginApiRequest, endApiRequest } from "./loading";
+
 const API_BASE_URL_OVERRIDE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 export function getApiBaseUrl(): string {
@@ -115,6 +117,22 @@ export function clearSession(): void {
   window.localStorage.removeItem(USER_KEY);
 }
 
+let redirectingToLogin = false;
+
+/**
+ * Drop a rejected token and return to the login screen. The guard keeps
+ * several parallel requests that all receive 401 from redirecting repeatedly.
+ */
+function handleUnauthorized(): void {
+  if (typeof window === "undefined" || redirectingToLogin) {
+    return;
+  }
+
+  redirectingToLogin = true;
+  clearSession();
+  window.location.replace("/portal?reason=session-expired");
+}
+
 // --- low-level fetch --------------------------------------------------------
 
 export class ApiError extends Error {
@@ -140,6 +158,19 @@ type RequestOptions = {
 };
 
 async function request<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  beginApiRequest();
+
+  try {
+    return await performRequest<T>(path, options);
+  } finally {
+    endApiRequest();
+  }
+}
+
+async function performRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
@@ -177,6 +208,10 @@ async function request<T>(
   };
 
   if (!response.ok) {
+    if (auth && response.status === 401) {
+      handleUnauthorized();
+    }
+
     throw new ApiError(
       data.message ?? "Something went wrong. Please try again.",
       response.status,
@@ -280,6 +315,7 @@ export type ApiUserRow = {
   last_name: string;
   full_name: string;
   email: string;
+  contact_number: string | null;
   is_active: boolean;
   role_id: number | null;
   role_name: string | null;
@@ -295,6 +331,12 @@ export async function listUsers(): Promise<ApiUserRow[]> {
   return data.data;
 }
 
+/** Load one user account (Admin only). */
+export async function getUser(id: number): Promise<ApiUserRow> {
+  const data = await request<{ data: ApiUserRow }>(`/users/${id}`);
+  return data.data;
+}
+
 export async function logout(): Promise<void> {
   await request<{ message: string }>("/logout", { method: "POST" });
 }
@@ -307,17 +349,67 @@ export async function logoutEverywhere(): Promise<void> {
 // --- admin console types ----------------------------------------------------
 
 export type ApiSkill = { skill_id: number; skill_name: string; description: string | null; category: string | null; laborer_count?: number };
-export type ApiProject = { project_id: number; project_name: string; client_name: string | null; location: string | null; start_date: string | null; end_date: string | null; approved_budget: string | number; remaining_budget: string | number; deadline: string | null; status: string | null; manager_id: string | null; manager_first_name: string | null; manager_last_name: string | null; phase_count: number };
+export type ApiProject = { project_id: number; project_name: string; client_name: string | null; location: string | null; start_date: string | null; end_date: string | null; approved_budget: string | number; remaining_budget: string | number; spent_budget: number; utilization: number; recorded_costs?: number; deadline: string | null; status: string | null; manager_id: string | null; manager_first_name: string | null; manager_last_name: string | null; phase_count: number };
 export type ApiPhase = { phase_id: number; project_id: number; project: string; project_name: string | null; description: string | null; sequence_no: number | null; project_cost: string | number | null; planned_start: string | null; planned_end: string | null; status: string | null };
 export type ApiAssignment = { assignment_id: number; first_name: string; last_name: string; project: string; phase: string; role_on_task: string | null; status: string | null; assigned_at: string | null; released_at: string | null; hourly_rate_ovveride: string | number | null };
-export type ApiEquipment = { equipment_id: number; equipment_name: string; equipment_type: string | null; hourly_rental_rate: string | number | null; equipment_status: string | null };
-export type ApiMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null };
-export type ApiSupplier = { supplier_id: number; supplier_name: string; contact_name: string | null; contact_num: string | null; city: string | null; state_province: string | null; country: string | null };
+export type ApiEquipment = { equipment_id: number; equipment_name: string; equipment_type: string | null; hourly_rental_rate: string | number | null; equipment_status: string | null; usage_count?: number };
+export type ApiMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; usage_count?: number };
 export type ApiAuditEvent = { audit_log_id: number; project_id: number; project_name: string | null; table_name: string; record_id: number; action_type: string; old_value: unknown; new_value: unknown; charge_at: string | null; id_number: string | null; first_name: string | null; last_name: string | null };
 export type ApiLoginAttempt = { id: number; ip_address: string | null; user_agent: string | null; status: "success" | "failed"; created_at: string | null; id_number: string | null; first_name: string | null; last_name: string | null };
 export type ApiRoleItem = { role_id: number; role_name: string; description: string | null };
 export type ApiDashboardData = { metrics: { total_users: number; active_users: number; skills: number; projects: number; audit_events_today: number; active_sessions: number }; roles: Record<string, number>; activity: { day: string; total: number }[]; recent: { id: number; table_name: string; record_id: number; action_type: string; charge_at: string | null; project_name: string | null; id_number: string | null; first_name: string | null; last_name: string | null }[] };
-export type ApiSearchResults = { users: { user_id: number; id_number: string; first_name: string; last_name: string; email: string; is_active: boolean }[]; skills: ApiSkill[]; projects: { project_id: number; project_name: string; client_name: string | null; location: string | null; status: string | null }[] };
+export type ApiSearchPhase = {
+  phase_id: number;
+  project_id: number;
+  phase_name: string | null;
+  project: string;
+  description: string | null;
+  status: string | null;
+};
+export type ApiSearchAssignment = {
+  assignment_id: number;
+  worker: string;
+  project: string;
+  phase: string | null;
+  role_on_task: string | null;
+  status: string | null;
+};
+export type ApiSearchMaterial = {
+  material_id: number;
+  material_name: string;
+  unit_of_measure: string | null;
+  unit_cost: number | string | null;
+  stock_quantity: number;
+};
+export type ApiSearchEquipment = {
+  equipment_id: number;
+  equipment_name: string;
+  equipment_type: string | null;
+  hourly_rental_rate: number | string | null;
+  equipment_status: string | null;
+};
+export type ApiSearchResults = {
+  users: {
+    user_id: number;
+    id_number: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    is_active: boolean;
+  }[];
+  skills: ApiSkill[];
+  projects: {
+    project_id: number;
+    project_name: string;
+    client_name: string | null;
+    location: string | null;
+    status: string | null;
+  }[];
+  phases: ApiSearchPhase[];
+  assignments: ApiSearchAssignment[];
+  materials: ApiSearchMaterial[];
+  equipment: ApiSearchEquipment[];
+};
 
 // --- admin console endpoints --------------------------------------------------
 
@@ -344,23 +436,93 @@ export const getAdminDashboard = () => request<ApiDashboardData>("/admin/dashboa
 export const getAdminProjects = async () => (await request<{ data: ApiProject[] }>("/admin/projects")).data;
 export const getAdminPhases = async () => (await request<{ data: ApiPhase[] }>("/admin/phases")).data;
 export const getAdminAssignments = async () => (await request<{ data: ApiAssignment[] }>("/admin/assignments")).data;
-export const getAdminResources = () => request<{ equipment: ApiEquipment[]; materials: ApiMaterial[]; suppliers: ApiSupplier[] }>("/admin/resources");
+export const getAdminResources = () => request<{ equipment: ApiEquipment[]; materials: ApiMaterial[] }>("/admin/resources");
+export type ApiMaterialPayload = {
+  material_name: string;
+  unit_of_measure?: string | null;
+  unit_cost: number;
+  stock_quantity: number;
+};
+export type ApiEquipmentPayload = {
+  equipment_name: string;
+  equipment_type?: string | null;
+  hourly_rental_rate: number;
+};
+export const createMaterial = (body: ApiMaterialPayload) =>
+  request<{ message: string; data: ApiMaterial }>("/admin/materials", { method: "POST", body });
+export const updateMaterial = (id: number, body: ApiMaterialPayload) =>
+  request<{ message: string; data: ApiMaterial }>(`/admin/materials/${id}`, { method: "PUT", body });
+export const deleteMaterial = (id: number) =>
+  request<{ message: string }>(`/admin/materials/${id}`, { method: "DELETE" });
+export const createEquipment = (body: ApiEquipmentPayload) =>
+  request<{ message: string; data: ApiEquipment }>("/admin/equipment", { method: "POST", body });
+export const updateEquipment = (id: number, body: ApiEquipmentPayload) =>
+  request<{ message: string; data: ApiEquipment }>(`/admin/equipment/${id}`, { method: "PUT", body });
+export const changeEquipmentStatus = (id: number, status: string) =>
+  request<{ message: string; data: ApiEquipment }>(`/admin/equipment/${id}/status`, {
+    method: "PATCH",
+    body: { status },
+  });
+export const deleteEquipment = (id: number) =>
+  request<{ message: string }>(`/admin/equipment/${id}`, { method: "DELETE" });
 export const getAuditEvents = async () => (await request<{ data: ApiAuditEvent[] }>("/admin/audit/events")).data;
 export const getAuditLogins = async () => (await request<{ data: ApiLoginAttempt[] }>("/admin/audit/logins")).data;
 export const searchAll = (q: string) => request<ApiSearchResults>(`/admin/search?q=${encodeURIComponent(q)}`);
 // --- project manager console -------------------------------------------------
 
-export type PmProject = { project_id: number; code: string; project_name: string; client_name: string | null; location: string | null; start_date: string | null; end_date: string | null; deadline: string | null; status: string | null; approved_budget: number; remaining_budget: number; spent_budget: number; utilization: number; phase_count: number; worker_count: number; progress: number; manager_id: string | null; manager_name: string; site_supervisor_id: number | null; site_supervisor: string | null; site_supervisor_code: string | null };
+export type PmProject = { project_id: number; code: string; project_name: string; client_name: string | null; location: string | null; start_date: string | null; end_date: string | null; deadline: string | null; status: string | null; approved_budget: number; materials_budget: number; equipment_budget: number; remaining_budget: number; spent_budget: number; utilization: number; phase_count: number; worker_count: number; progress: number; manager_id: string | null; manager_name: string; site_supervisor_id: number | null; site_supervisor: string | null; site_supervisor_code: string | null };
 
 /** Active Site Supervisor a PM can attach to a project. */
-export type PmSupervisor = { user_id: number; id_number: string; name: string };
-export type PmPhase = { phase_id: number; project_id: number; project: string; phase_name: string | null; description: string | null; sequence_no: number | null; project_cost: number; planned_start: string | null; planned_end: string | null; status: string | null; required_skill_id: number | null; required_skill: string | null };
-export type PmLaborer = { laborer_id: number; first_name: string; last_name: string; hourly_rate: string | number; employment_status: string; project?: string; phase?: string; role_on_task?: string | null; status?: string | null; assignment_id?: number };
+export type PmSupervisor = { user_id: number; id_number: string; name: string; email: string | null; is_active: boolean };
+export type PmPhase = { phase_id: number; project_id: number; project: string; phase_name: string | null; description: string | null; sequence_no: number | null; project_cost: number; materials_budget: number; equipment_budget: number; planned_start: string | null; planned_end: string | null; status: string | null; completion_requested_at?: string | null; required_skill_id: number | null; required_skill: string | null };
+export type PmLaborer = { laborer_id: number; first_name: string; last_name: string; hourly_rate: string | number; hourly_rate_ovveride?: string | number | null; employment_status: string; project?: string; phase_id?: number; phase?: string; role_on_task?: string | null; status?: string | null; assignment_id?: number };
+export type PmLaborerSkill = { skill_id: number; skill_name: string };
+export type PmTask = {
+  id: string;
+  task_id: number;
+  project_id: number;
+  project: string;
+  phase_id: number | null;
+  phase: string | null;
+  phase_status: string | null;
+  title: string;
+  date: string;
+  time: string;
+  assigned_laborer_id: number | null;
+  assignee: string;
+  status: string;
+};
+export type PmTaskPayload = {
+  project_id: number;
+  phase_id?: number | null;
+  title: string;
+  task_date: string;
+  start_time?: string | null;
+  assigned_laborer_id?: number | null;
+};
+export type PmLaborerProfile = {
+  laborer_id: number;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  hourly_rate: number | null;
+  employment_status: string | null;
+  contact_number: string | null;
+  date_hired: string | null;
+  skills: PmLaborerSkill[];
+};
+export type PmLaborerPayload = {
+  first_name: string;
+  last_name: string;
+  hourly_rate: number;
+  contact_number?: string | null;
+  date_hired?: string | null;
+};
 export type PmWorkforce = { available: PmLaborer[]; assigned: PmLaborer[]; skills: Record<string, string[]> };
-export type PmMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; supplier_name: string | null; used_quantity?: number };
+export type PmMaterial = { material_id: number; material_name: string; unit_of_measure: string | null; unit_cost: string | number | null; stock_quantity: number; used_quantity?: number };
 export type PmEquipment = { equipment_id: number; equipment_name: string; equipment_type: string | null; hourly_rental_rate: string | number | null; equipment_status: string | null; assigned_project: string | null; used_hours?: number };
-export type PmAssignment = { assignment_id: number; first_name: string; last_name: string; project: string; phase: string; role_on_task: string | null; status: string | null; assigned_at: string | null; released_at: string | null; hourly_rate_ovveride: string | number | null };
-export type PmBudget = { project_id: number; project: string; approved: number; spent: number; remaining: number; utilization: number };
+export type PmAssignment = { assignment_id: number; laborer_id: number; phase_id: number; first_name: string; last_name: string; project: string; phase: string; role_on_task: string | null; status: string | null; assigned_at: string | null; released_at: string | null; hourly_rate_ovveride: string | number | null };
+export type PmBudget = { project_id: number; project: string; approved: number; spent: number; remaining: number; utilization: number; materials_budget: number; materials_spent: number; materials_remaining: number; equipment_budget: number; equipment_spent: number; equipment_remaining: number };
 export type PmCostReport = { categories: { category: string; actual: number }[]; totals: { approved: number; actual: number; remaining: number; variance: number; utilization: number } };
 export type PmDashboard = { metrics: { projects: number; active_projects: number; completed_projects: number; assigned_workers: number; open_phases: number; approved_budget: number; remaining_budget: number; utilization: number }; costs: { labor: number; materials: number; equipment: number; total: number }; deadlines: PmProject[]; projects: PmProject[] };
 export type PmSearchResults = { projects: { project_id: number; project_name: string; client_name: string | null; location: string | null; status: string | null }[]; phases: { phase_id: number; project_id: number; project: string; project_name: string | null; status: string | null }[]; laborers: { laborer_id: number; first_name: string; last_name: string; hourly_rate: string | number; employment_status: string }[] };
@@ -371,15 +533,27 @@ export const listPmProjects = async () => (await request<{ data: PmProject[] }>(
 /** Adds the PM project selector filter to a read. */
 const pmQuery = (projectId?: number | null) => (projectId ? `?project_id=${projectId}` : "");
 export const listPmPhases = async (projectId?: number | null) => (await request<{ data: PmPhase[] }>(`/pm/phases${pmQuery(projectId)}`)).data;
-export const listPmSiteSupervisors = async () => (await request<{ data: PmSupervisor[] }>("/pm/site-supervisors")).data;
+export const listPmTasks = async (projectId?: number | null) =>
+  (await request<{ data: PmTask[] }>(`/pm/tasks${pmQuery(projectId)}`)).data;
+export const createPmTask = (body: PmTaskPayload) =>
+  request<{ message: string; data: PmTask }>("/pm/tasks", { method: "POST", body });
+export const updatePmTask = (id: number, body: PmTaskPayload) =>
+  request<{ message: string; data: PmTask }>(`/pm/tasks/${id}`, { method: "PUT", body });
+export const deletePmTask = (id: number) =>
+  request<{ message: string }>(`/pm/tasks/${id}`, { method: "DELETE" });
+export const listPmSiteSupervisors = async (includeInactive = false) =>
+  (await request<{ data: PmSupervisor[] }>(
+    `/pm/site-supervisors${includeInactive ? "?include_inactive=1" : ""}`,
+  )).data;
 export type PmPhasePayload = {
   phase_name: string;
   description?: string | null;
   sequence_no?: number | null;
   project_cost?: number | null;
+  materials_budget?: number | null;
+  equipment_budget?: number | null;
   planned_start?: string | null;
   planned_end?: string | null;
-  status?: string | null;
   required_skill_id?: number | null;
 };
 
@@ -389,6 +563,19 @@ export const createPmPhase = (body: PmPhasePayload & { project_id: number }) =>
 export const updatePmPhase = (id: number, body: PmPhasePayload) =>
   request<{ message: string; data: PmPhase }>(`/pm/phases/${id}`, { method: "PUT", body });
 
+export const startPmPhase = (id: number) =>
+  request<{ message: string; data: PmPhase }>(`/pm/phases/${id}/start`, { method: "PATCH" });
+
+export const approvePmPhaseCompletion = (id: number) =>
+  request<{ message: string; data: PmPhase }>(`/pm/phases/${id}/approve-completion`, {
+    method: "PATCH",
+  });
+
+export const rejectPmPhaseCompletion = (id: number) =>
+  request<{ message: string; data: PmPhase }>(`/pm/phases/${id}/reject-completion`, {
+    method: "PATCH",
+  });
+
 export const deletePmPhase = (id: number) =>
   request<{ message: string }>(`/pm/phases/${id}`, { method: "DELETE" });
 
@@ -396,6 +583,7 @@ export type PmAssignmentPayload = {
   laborer_id: number;
   phase_id: number;
   role_on_task?: string | null;
+  hourly_rate_ovveride?: number | null;
 };
 
 export const createPmAssignment = (body: PmAssignmentPayload) =>
@@ -413,9 +601,9 @@ export type PmProjectPayload = {
   location?: string | null;
   start_date?: string | null;
   end_date?: string | null;
-  deadline?: string | null;
   approved_budget?: number | null;
-  status?: string | null;
+  materials_budget?: number | null;
+  equipment_budget?: number | null;
   site_supervisor_id?: number | null;
 };
 
@@ -423,14 +611,44 @@ export type PmProjectPayload = {
 export const createPmProject = (body: PmProjectPayload) =>
   request<{ message: string; data: { project_id: number } }>("/pm/projects", { method: "POST", body });
 
-/** Update one of the signed-in PM's own projects (timeline + status). */
+/** Update one of the signed-in PM's own projects (timeline and budget fields). */
 export const updatePmProject = (id: number, body: PmProjectPayload) =>
   request<{ message: string; data: { project_id: number } }>(`/pm/projects/${id}`, { method: "PUT", body });
+export const changePmProjectStatus = (id: number, status: string) =>
+  request<{ message: string; data: PmProject }>(`/pm/projects/${id}/status`, {
+    method: "PATCH",
+    body: { status },
+  });
 export const getPmWorkforce = (projectId?: number | null) => request<PmWorkforce>(`/pm/workforce${pmQuery(projectId)}`);
 export const getPmSkillMatch = (phaseId: number) => request<{ phase: PmPhase; required_skill: string | null; data: PmLaborer[] }>(`/pm/skill-match?phase_id=${phaseId}`);
 
 /** Read-only skill list for the PM's phase requirement picker. */
 export const listPmSkills = async () => (await request<{ data: ApiSkill[] }>("/pm/skills")).data;
+
+/** Laborer profile management (PM writes, Admin read-only oversight). */
+export const listPmLaborers = async () =>
+  (await request<{ data: PmLaborerProfile[] }>("/pm/laborers")).data;
+export const getPmLaborer = async (id: number) =>
+  (await request<{ data: PmLaborerProfile }>(`/pm/laborers/${id}`)).data;
+export const createPmLaborer = (body: PmLaborerPayload) =>
+  request<{ message: string; data: PmLaborerProfile }>("/pm/laborers", { method: "POST", body });
+export const updatePmLaborer = (id: number, body: PmLaborerPayload) =>
+  request<{ message: string; data: PmLaborerProfile }>(`/pm/laborers/${id}`, { method: "PUT", body });
+export const changePmLaborerStatus = (id: number, status: string) =>
+  request<{ message: string; data: PmLaborerProfile }>(`/pm/laborers/${id}/status`, {
+    method: "PATCH",
+    body: { status },
+  });
+export const deletePmLaborer = (id: number) =>
+  request<{ message: string }>(`/pm/laborers/${id}`, { method: "DELETE" });
+export const attachPmLaborerSkill = (id: number, skillId: number) =>
+  request<{ message: string; data: PmLaborerSkill }>(`/pm/laborers/${id}/skills`, {
+    method: "POST",
+    body: { skill_id: skillId },
+  });
+export const detachPmLaborerSkill = (id: number, skillId: number) =>
+  request<{ message: string }>(`/pm/laborers/${id}/skills/${skillId}`, { method: "DELETE" });
+
 export const listPmMaterials = async (projectId?: number | null) => (await request<{ data: PmMaterial[] }>(`/pm/materials${pmQuery(projectId)}`)).data;
 export const listPmEquipment = async (projectId?: number | null) => (await request<{ data: PmEquipment[] }>(`/pm/equipment${pmQuery(projectId)}`)).data;
 export const listPmAssignments = async (projectId?: number | null) => (await request<{ data: PmAssignment[] }>(`/pm/assignments${pmQuery(projectId)}`)).data;
@@ -526,16 +744,21 @@ export type SsSite = {
   project_id: number;
   code: string;
   project: string;
+  description: string;
   location: string | null;
   client: string | null;
   supervisor: string;
   supervisor_id: string | null;
+  supervisorEmail: string | null;
   manager: string;
+  managerEmail: string | null;
   status: string | null;
   startDate: string | null;
   endDate: string | null;
   deadline: string | null;
   currentPhase: string | null;
+  budgets: { total: number; materials: number; equipment: number; labor: number };
+  spend: { materials: number; equipment: number; labor: number; total: number };
   coordinates: { lat: number | null; lng: number | null };
 };
 
@@ -548,6 +771,8 @@ export type SsPhase = {
   sequence: number;
   progress: number;
   status: string | null;
+  completionRequestedAt: string | null;
+  workers: number;
   plannedStart: string | null;
   plannedEnd: string | null;
   required_skill_id: number | null;
@@ -580,11 +805,14 @@ export type SsSiteOption = {
   project: string;
   location: string | null;
   status: string | null;
+  progress: number;
 };
 
 export type SsTask = {
   id: string;
   task_id: number;
+  phase_id: number | null;
+  phase_status: string | null;
   date: string;
   time: string;
   title: string;
@@ -600,10 +828,14 @@ export type SsLaborLog = {
   log_id: number;
   assignment_id: number;
   date: string;
+  shift: string;
+  time_in: string | null;
+  time_out: string | null;
   worker: string;
   regular: number;
   overtime: number;
   total: number;
+  expense: number;
   phase_id: number;
   phase: string | null;
   project_id: number;
@@ -619,6 +851,7 @@ export type SsMaterialLog = {
   material: string;
   quantity: number;
   unit: string | null;
+  expense: number;
   phase_id: number;
   phase: string | null;
   project_id: number;
@@ -633,6 +866,7 @@ export type SsEquipmentLog = {
   date: string;
   equipment: string;
   hours: number;
+  expense: number;
   phase_id: number;
   phase: string | null;
   project_id: number;
@@ -645,6 +879,7 @@ export type SsMaterial = {
   name: string;
   unit: string | null;
   stock: number;
+  unit_cost: number;
 };
 
 export type SsEquipment = {
@@ -652,6 +887,7 @@ export type SsEquipment = {
   name: string;
   type: string | null;
   status: string | null;
+  hourly_rate: number;
 };
 
 export type SsSubmission = {
@@ -723,7 +959,14 @@ export type SsMaterialsResponse = {
   phases: SsPhase[];
   logs: SsMaterialLog[];
   series: SsSeriesPoint[];
-  metrics: { entries_today: number; distinct_today: number; total_logs: number };
+  metrics: {
+    entries_today: number;
+    distinct_today: number;
+    total_logs: number;
+    materials_allocation: number;
+    materials_spent: number;
+    materials_remaining: number;
+  };
 };
 
 export type SsEquipmentResponse = {
@@ -732,7 +975,15 @@ export type SsEquipmentResponse = {
   phases: SsPhase[];
   logs: SsEquipmentLog[];
   series: SsSeriesPoint[];
-  metrics: { hours_today: number; logs_today: number; machines_today: number; total_logs: number };
+  metrics: {
+    hours_today: number;
+    logs_today: number;
+    machines_today: number;
+    total_logs: number;
+    equipment_allocation: number;
+    equipment_spent: number;
+    equipment_remaining: number;
+  };
 };
 
 export type SsWorkersResponse = {
@@ -773,13 +1024,26 @@ export const getSsSchedule = (scope: "today" | "week" | "all", projectId?: numbe
   request<SsScheduleResponse>(
     `/ss/schedule?scope=${scope}${projectId ? `&project_id=${projectId}` : ""}`,
   );
+export const updateSsTaskStatus = (taskId: number, status: string) =>
+  request<SsWriteResponse>(`/ss/tasks/${taskId}/status`, {
+    method: "PUT",
+    body: { status },
+  });
+export const updatePmTaskStatus = (taskId: number, status: string) =>
+  request<SsWriteResponse>(`/pm/tasks/${taskId}/status`, {
+    method: "PUT",
+    body: { status },
+  });
 export const getSsLogHours = (projectId?: number | null) =>
   request<SsLogHoursResponse>(`/ss/log-hours${ssQuery(projectId)}`);
 export type SsLaborLogBody = {
   assignment_id: number;
   log_date: string;
-  regular_hours: number;
-  overtime_hours: number;
+  shift?: string;
+  time_in?: string | null;
+  time_out?: string | null;
+  regular_hours?: number;
+  overtime_hours?: number;
 };
 export const createSsLaborLog = (body: SsLaborLogBody) =>
   request<SsWriteResponse>("/ss/log-hours", { method: "POST", body });
@@ -819,6 +1083,9 @@ export const getSsWorkers = (projectId?: number | null) =>
   request<SsWorkersResponse>(`/ss/workers${ssQuery(projectId)}`);
 export const getSsPhases = (projectId?: number | null) =>
   request<SsPhasesResponse>(`/ss/phases${ssQuery(projectId)}`);
+/** Ask the Project Manager to sign a phase off. */
+export const requestSsPhaseCompletion = (phaseId: number) =>
+  request<SsWriteResponse>(`/ss/phases/${phaseId}/request-completion`, { method: "POST" });
 export const getSsSearch = (q: string, projectId?: number | null) =>
   request<SsSearchResponse>(
     `/ss/search?q=${encodeURIComponent(q)}${projectId ? `&project_id=${projectId}` : ""}`,

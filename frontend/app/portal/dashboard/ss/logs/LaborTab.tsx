@@ -1,122 +1,186 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   createSsLaborLog,
   deleteSsLaborLog,
   getSsLogHours,
+  getSsPhases,
   updateSsLaborLog,
   type SsLaborLog,
 } from "@/lib/api";
-import {
-  SaPanel,
-  SaTable,
-  StatusBadge,
-  type SaColumn,
-} from "@/app/portal/dashboard/sa/_components/SaPage";
+import { confirmDelete } from "@/lib/confirmDelete";
+import { SaPanel, SaTable, Tabs, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 import {
   ErrorNote,
   Field,
   FormActions,
   FormShell,
-  KpiStrip,
   SubmitButton,
 } from "../_components/SsReport";
 import { useSsResource } from "../_components/useSsResource";
-import { RecordDetails, type DetailRow } from "@/app/portal/dashboard/_components/RecordDetails";
 import styles from "../../sa/page.module.css";
 import ssStyles from "../ss.module.css";
 
 type Notice = { type: "success" | "error"; message: string } | null;
+type TabId = "add" | "history";
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: "history", label: "All Workers Log" },
+  { id: "add", label: "Add Log for Today" },
+];
+const SHIFTS = ["Morning", "Afternoon"] as const;
 
 export function LaborTab({ projectId }: { projectId: number }) {
   const { data, loading, error, reload } = useSsResource(
     () => getSsLogHours(projectId),
     projectId,
   );
+  // Phase dropdown is fed live from the phases endpoint.
+  const phaseResource = useSsResource(() => getSsPhases(projectId), projectId);
+
+  // History is the default view; adding a log is always one click away.
+  const [tab, setTab] = useState<TabId>("history");
+
+  const [dateFilter, setDateFilter] = useState("");
+  const [shiftFilter, setShiftFilter] = useState("all");
+  const [phaseFilter, setPhaseFilter] = useState("all");
 
   const [assignmentId, setAssignmentId] = useState("");
   const [date, setDate] = useState("");
-  const [regular, setRegular] = useState("8");
-  const [overtime, setOvertime] = useState("0");
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [shift, setShift] = useState<string>("Morning");
+  const [timeIn, setTimeIn] = useState("08:00");
+  const [timeOut, setTimeOut] = useState("17:00");
+  const [formPhase, setFormPhase] = useState("");
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [saving, setSaving] = useState(false);
-  const [detail, setDetail] = useState<{ title: string; rows: DetailRow[] } | null>(null);
+  const [editingLog, setEditingLog] = useState<SsLaborLog | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (data?.server_date && date === "" && editingId === null) {
+    if (data?.server_date && date === "") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDate(data.server_date);
     }
-  }, [data?.server_date, date, editingId]);
+  }, [data?.server_date, date]);
 
-  const assignments = data?.assignments ?? [];
+  useEffect(() => {
+    if (data?.server_date && dateFilter === "") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDateFilter(data.server_date);
+    }
+  }, [data?.server_date, dateFilter]);
 
-  const resetForm = () => {
-    setEditingId(null);
+  const assignments = useMemo(() => data?.assignments ?? [], [data?.assignments]);
+  const sitePhases = useMemo(
+    () => phaseResource.data?.data ?? [],
+    [phaseResource.data],
+  );
+
+  // Workers on the chosen phase (all active workers when no phase is picked).
+  const workerOptions = useMemo(() => {
+    const options =
+      formPhase === ""
+        ? assignments
+        : assignments.filter((row) => String(row.phase_id) === formPhase);
+
+    // Keep a historical assignment selectable even after it has been released.
+    if (
+      editingLog &&
+      !options.some((row) => row.assignment_id === editingLog.assignment_id)
+    ) {
+      return [
+        {
+          assignment_id: editingLog.assignment_id,
+          laborer_id: 0,
+          worker: editingLog.worker,
+          phase_id: editingLog.phase_id,
+          phase: editingLog.phase,
+          role_on_task: null,
+          status: "Active",
+        },
+        ...options,
+      ];
+    }
+
+    return options;
+  }, [assignments, editingLog, formPhase]);
+
+  const selectedAssignment =
+    workerOptions.find((row) => String(row.assignment_id) === assignmentId) ?? null;
+  const workerId =
+    selectedAssignment && selectedAssignment.laborer_id > 0
+      ? `LAB-${String(selectedAssignment.laborer_id).padStart(4, "0")}`
+      : "";
+
+  // Date + shift + phase are applied together in the history table.
+  const visible = useMemo(
+    () =>
+      (data?.logs ?? []).filter((row) => {
+        const matchesDate = dateFilter === "" || String(row.date).slice(0, 10) === dateFilter;
+        const matchesShift = shiftFilter === "all" || row.shift === shiftFilter;
+        const matchesPhase = phaseFilter === "all" || String(row.phase_id) === phaseFilter;
+
+        return matchesDate && matchesShift && matchesPhase;
+      }),
+    [data?.logs, dateFilter, shiftFilter, phaseFilter],
+  );
+
+  function resetForm() {
     setAssignmentId("");
-    setRegular("8");
-    setOvertime("0");
+    setFormPhase("");
+    setShift("Morning");
+    setTimeIn("08:00");
+    setTimeOut("17:00");
     setFormError("");
-  };
-
-  const startEdit = (row: SsLaborLog) => {
-    setEditingId(row.log_id);
-    setAssignmentId(String(row.assignment_id));
-    setDate(String(row.date).slice(0, 10));
-    setRegular(String(row.regular));
-    setOvertime(String(row.overtime));
-    setFormError("");
-    setNotice(null);
-  };
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
     setNotice(null);
 
-    const reg = Number(regular);
-    const ot = Number(overtime);
-
     if (assignmentId === "") {
       setFormError("Select the worker this log belongs to.");
-      return;
-    }
-    if (!Number.isFinite(reg) || reg < 0 || !Number.isFinite(ot) || ot < 0) {
-      setFormError("Hours must be zero or more.");
-      return;
-    }
-    if (reg + ot <= 0) {
-      setFormError("Enter at least one hour.");
-      return;
-    }
-    if (reg + ot > 24) {
-      setFormError("A laborer cannot log more than 24 hours in one day.");
       return;
     }
     if (date === "") {
       setFormError("Choose the work date.");
       return;
     }
+    if (timeIn === "" || timeOut === "") {
+      setFormError("Enter both the time in and the time out.");
+      return;
+    }
+    if (timeOut <= timeIn) {
+      setFormError("Time out must be later than time in.");
+      return;
+    }
 
     setSaving(true);
+    const wasEditing = editingLog !== null;
+
     try {
       const body = {
         assignment_id: Number(assignmentId),
         log_date: date,
-        regular_hours: reg,
-        overtime_hours: ot,
+        shift,
+        time_in: timeIn,
+        time_out: timeOut,
       };
-
-      const result = editingId
-        ? await updateSsLaborLog(editingId, body)
+      const result = wasEditing
+        ? await updateSsLaborLog(editingLog.log_id, {
+            ...body,
+            overtime_hours: editingLog.overtime,
+          })
         : await createSsLaborLog(body);
 
       setNotice({ type: "success", message: result.message });
+      setEditingLog(null);
       resetForm();
       reload();
+      setTab("history");
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Could not save the labor log.");
     } finally {
@@ -124,76 +188,81 @@ export function LaborTab({ projectId }: { projectId: number }) {
     }
   }
 
-  async function handleVoid(row: SsLaborLog) {
-    const confirmed = window.confirm(
-      `Void the labor entry for ${row.worker} on ${row.date}? The project budget is refunded and this cannot be undone.`,
-    );
+  function startEdit(row: SsLaborLog) {
+    setEditingLog(row);
+    setAssignmentId(String(row.assignment_id));
+    setFormPhase(String(row.phase_id));
+    setDate(String(row.date).slice(0, 10));
+    setShift(row.shift);
+    setTimeIn((row.time_in ?? "08:00").slice(0, 5));
+    setTimeOut((row.time_out ?? "17:00").slice(0, 5));
+    setFormError("");
+    setNotice(null);
+    setTab("add");
+  }
 
-    if (!confirmed) {
+  function cancelEdit() {
+    setEditingLog(null);
+    resetForm();
+    setTab("history");
+  }
+
+  async function handleDelete(row: SsLaborLog) {
+    if (
+      !confirmDelete(
+        `Void the labor log for ${row.worker} on ${row.date}? The project budget will be refunded.`,
+      )
+    ) {
       return;
     }
+
+    setDeletingId(row.log_id);
+    setNotice(null);
 
     try {
       const result = await deleteSsLaborLog(row.log_id);
       setNotice({ type: "success", message: result.message });
-
-      if (editingId === row.log_id) {
+      if (editingLog?.log_id === row.log_id) {
+        setEditingLog(null);
         resetForm();
       }
       reload();
     } catch (err) {
       setNotice({
         type: "error",
-        message: err instanceof Error ? err.message : "Could not void the log.",
+        message: err instanceof Error ? err.message : "Could not delete the labor log.",
       });
+    } finally {
+      setDeletingId(null);
     }
   }
 
+  // Five read-only columns plus row actions.
   const columns: SaColumn<SsLaborLog>[] = [
+    { key: "worker", label: "Worker Name", render: (row) => row.worker },
+    { key: "phase", label: "Phase", render: (row) => row.phase ?? "-" },
+    { key: "shift", label: "Shift", render: (row) => row.shift },
     {
-      key: "date",
-      label: "Date / Site",
-      render: (row) => (
-        <span>
-          {row.date}
-          <span style={{ display: "block", color: "#94a3b8", fontSize: "0.7rem" }}>{row.project}</span>
-        </span>
-      ),
+      key: "times",
+      label: "Time In / Out",
+      render: (row) => `${row.time_in ?? "-"} - ${row.time_out ?? "-"}`,
     },
-    { key: "worker", label: "Worker", render: (row) => row.worker },
-    { key: "hours", label: "Hours", render: (row) => `${row.total} h` },
-    {
-      key: "status",
-      label: "Status",
-      status: true,
-      render: (row) => <StatusBadge status={row.status} />,
-    },
+    { key: "hours", label: "Total Hours", render: (row) => `${row.total} h` },
     {
       key: "actions",
       label: "Actions",
       render: (row) => (
         <div className={styles.actionCell}>
-          <button type="button" className={styles.linkButton} onClick={() => setDetail({
-            title: row.worker,
-            rows: [
-              { label: "Log ID", value: row.id },
-              { label: "Date", value: row.date },
-              { label: "Project", value: row.project },
-              { label: "Phase", value: row.phase ?? "-" },
-              { label: "Worker", value: row.worker },
-              { label: "Regular Hours", value: `${row.regular} h` },
-              { label: "Overtime Hours", value: `${row.overtime} h` },
-              { label: "Total Hours", value: `${row.total} h` },
-              { label: "Status", value: row.status },
-            ],
-          })}>
-            View
-          </button>
           <button type="button" className={styles.linkButton} onClick={() => startEdit(row)}>
             Edit
           </button>
-          <button type="button" className={styles.linkButtonAlt} onClick={() => handleVoid(row)}>
-            Void
+          <button
+            type="button"
+            className={styles.linkButtonAlt}
+            onClick={() => handleDelete(row)}
+            disabled={deletingId !== null}
+          >
+            {deletingId === row.log_id ? "Deleting..." : "Delete"}
           </button>
         </div>
       ),
@@ -202,34 +271,54 @@ export function LaborTab({ projectId }: { projectId: number }) {
 
   return (
     <>
-      <SaPanel title={editingId ? `Correct labor log ${editingId}` : "New labor log"}>
-        {notice ? (
-          <p className={notice.type === "error" ? ssStyles.noticeError : ssStyles.notice}>
-            {notice.message}
-          </p>
-        ) : null}
+      <Tabs items={TABS} active={tab} onChange={setTab} label="Workers log views" />
 
-        {loading ? (
-          <p className={ssStyles.muted}>Loading workers...</p>
-        ) : assignments.length === 0 ? (
-          <p className={ssStyles.muted}>No active worker assignments on this site yet.</p>
-        ) : (
+      {notice ? (
+        <p className={notice.type === "error" ? ssStyles.noticeError : ssStyles.notice}>
+          {notice.message}
+        </p>
+      ) : null}
+
+      {tab === "add" ? (
+        <SaPanel title={editingLog ? "Edit worker log" : "Add log for today"}>
+          {!editingLog && assignments.length === 0 && !loading ? (
+            <p className={ssStyles.notice}>
+              No active worker is assigned to this site yet. Ask your Project Manager to assign a
+              worker to a phase, then the dropdown below will populate.
+            </p>
+          ) : null}
+
           <FormShell onSubmit={handleSubmit}>
-            <Field label="Worker / Assignment">
+            <Field label="Worker Name">
               <select
                 value={assignmentId}
-                onChange={(event) => setAssignmentId(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setAssignmentId(value);
+                  const match = assignments.find((row) => String(row.assignment_id) === value);
+                  if (match?.phase_id) {
+                    setFormPhase(String(match.phase_id));
+                  }
+                }}
+                disabled={workerOptions.length === 0}
                 required
               >
-                <option value="">Select worker</option>
-                {assignments.map((row) => (
+                <option value="">
+                  {loading ? "Loading workers..." : "Select worker"}
+                </option>
+                {workerOptions.map((row) => (
                   <option key={row.assignment_id} value={row.assignment_id}>
                     {row.worker} - {row.phase ?? "Phase"}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Work Date">
+
+            <Field label="Worker ID">
+              <input type="text" value={workerId} readOnly placeholder="Auto-filled" />
+            </Field>
+
+            <Field label="Date">
               <input
                 type="date"
                 value={date}
@@ -238,69 +327,132 @@ export function LaborTab({ projectId }: { projectId: number }) {
                 required
               />
             </Field>
-            <Field label="Regular Hours">
+
+            <Field label="Shift">
+              <select value={shift} onChange={(event) => setShift(event.target.value)} required>
+                {SHIFTS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Time In">
               <input
-                type="number"
-                min="0"
-                max="24"
-                step="0.5"
-                value={regular}
-                onChange={(event) => setRegular(event.target.value)}
+                type="time"
+                value={timeIn}
+                onChange={(event) => setTimeIn(event.target.value)}
                 required
               />
             </Field>
-            <Field label="Overtime Hours">
+
+            <Field label="Time Out">
               <input
-                type="number"
-                min="0"
-                max="12"
-                step="0.5"
-                value={overtime}
-                onChange={(event) => setOvertime(event.target.value)}
+                type="time"
+                value={timeOut}
+                onChange={(event) => setTimeOut(event.target.value)}
+                required
               />
             </Field>
+
+            <Field label="Skill / Phase">
+              <select
+                value={formPhase}
+                onChange={(event) => {
+                  setFormPhase(event.target.value);
+                  setAssignmentId("");
+                }}
+              >
+                <option value="">All phases</option>
+                {editingLog &&
+                !sitePhases.some((phase) => phase.phase_id === editingLog.phase_id) ? (
+                  <option value={editingLog.phase_id}>
+                    {editingLog.phase ?? `Phase ${editingLog.phase_id}`}
+                  </option>
+                ) : null}
+                {sitePhases.map((phase) => (
+                  <option key={phase.phase_id} value={phase.phase_id}>
+                    {phase.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
             {formError !== "" ? <ErrorNote>{formError}</ErrorNote> : null}
             <FormActions>
-              <SubmitButton>
-                {saving ? "Saving..." : editingId ? "Save correction" : "Submit labor log"}
-              </SubmitButton>
-              {editingId ? (
-                <button type="button" className={styles.linkButtonAlt} onClick={resetForm}>
+              {editingLog ? (
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={cancelEdit}
+                  disabled={saving}
+                >
                   Cancel edit
                 </button>
               ) : null}
+              <SubmitButton>
+                {saving ? "Saving..." : editingLog ? "Update Log" : "Save Log"}
+              </SubmitButton>
             </FormActions>
           </FormShell>
-        )}
-      </SaPanel>
+        </SaPanel>
+      ) : null}
 
-      <KpiStrip
-        items={[
-          { label: "Hours Today", value: `${data?.metrics.hours_today ?? 0} h` },
-          { label: "Logs Today", value: String(data?.metrics.logs_today ?? 0) },
-          { label: "Crew On Site", value: String(data?.metrics.crew ?? 0) },
-          { label: "Total Logs", value: String(data?.metrics.total_logs ?? 0) },
-        ]}
-      />
 
-      <SaPanel title="Recent labor logs">
-        <SaTable
-          columns={columns}
-          rows={data?.logs ?? []}
-          loading={loading}
-          error={error}
-          rowKey={(row) => row.id}
-          emptyText="No labor hours logged yet."
-        />
-      </SaPanel>
-
-      <RecordDetails
-        open={detail !== null}
-        title={detail?.title ?? ""}
-        subtitle="Labor log details"
-        rows={detail?.rows ?? []}
-        onClose={() => setDetail(null)}
-      />
+      {tab === "history" ? (
+        <SaPanel
+          title={`Worker logs (${visible.length})`}
+          filters={
+            <>
+              <span className={ssStyles.siteSelectLabel}>Date</span>
+              <input
+                type="date"
+                value={dateFilter}
+                max={data?.server_date}
+                onChange={(event) => setDateFilter(event.target.value)}
+                aria-label="Filter worker logs by date"
+              />
+              <span className={ssStyles.siteSelectLabel}>Filter by Shift</span>
+              <select
+                value={shiftFilter}
+                onChange={(event) => setShiftFilter(event.target.value)}
+                aria-label="Filter worker logs by shift"
+              >
+                <option value="all">All Shifts</option>
+                {SHIFTS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              <span className={ssStyles.siteSelectLabel}>Filter by Phase</span>
+              <select
+                value={phaseFilter}
+                onChange={(event) => setPhaseFilter(event.target.value)}
+                aria-label="Filter worker logs by phase"
+              >
+                <option value="all">All Phases</option>
+                {sitePhases.map((phase) => (
+                  <option key={phase.phase_id} value={phase.phase_id}>
+                    {phase.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          }
+        >
+          <SaTable
+            columns={columns}
+            rows={visible}
+            loading={loading}
+            error={error}
+            rowKey={(row) => row.id}
+            emptyText="No worker logs match this date, shift and phase."
+          />
+        </SaPanel>
+      ) : null}
     </>
   );
 }
+

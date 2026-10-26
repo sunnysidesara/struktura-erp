@@ -100,6 +100,12 @@ const saSidebar: SidebarSection[] = [
       },
       {
         type: "link",
+        icon: "dollar-sign",
+        label: "Finance",
+        href: "/portal/dashboard/sa/finance",
+      },
+      {
+        type: "link",
         icon: "list",
         label: "Phases",
         href: "/portal/dashboard/sa/phases",
@@ -115,6 +121,18 @@ const saSidebar: SidebarSection[] = [
         icon: "book",
         label: "Resources",
         href: "/portal/dashboard/sa/resources",
+      },
+      {
+        type: "link",
+        icon: "bar-chart",
+        label: "Usage",
+        href: "/portal/dashboard/sa/usage",
+      },
+      {
+        type: "link",
+        icon: "clock",
+        label: "Labor Logs",
+        href: "/portal/dashboard/sa/labor-logs",
       },
     ],
   },
@@ -133,7 +151,7 @@ const pmSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "folder",
-        label: "Projects",
+        label: "Project",
         href: "/portal/dashboard/pm/projects",
       },
       {
@@ -144,15 +162,22 @@ const pmSidebar: SidebarSection[] = [
       },
       {
         type: "link",
-        icon: "user-check",
+        icon: "users",
         label: "Workforce",
         href: "/portal/dashboard/pm/workforce",
       },
-    ],
-  },
-  {
-    label: "RESOURCES",
-    items: [
+      {
+        type: "link",
+        icon: "user-check",
+        label: "Supervisors",
+        href: "/portal/dashboard/pm/supervisors",
+      },
+      {
+        type: "link",
+        icon: "dollar-sign",
+        label: "Finance",
+        href: "/portal/dashboard/pm/finance",
+      },
       {
         type: "link",
         icon: "package",
@@ -164,23 +189,6 @@ const pmSidebar: SidebarSection[] = [
         icon: "wrench",
         label: "Equipment",
         href: "/portal/dashboard/pm/equipment",
-      },
-      {
-        type: "link",
-        icon: "check-square",
-        label: "Assignments",
-        href: "/portal/dashboard/pm/assignments",
-      },
-    ],
-  },
-  {
-    label: "FINANCE",
-    items: [
-      {
-        type: "link",
-        icon: "dollar-sign",
-        label: "Finance",
-        href: "/portal/dashboard/pm/finance",
       },
     ],
   },
@@ -199,7 +207,7 @@ const ssSidebar: SidebarSection[] = [
       {
         type: "link",
         icon: "map-pin",
-        label: "My Site",
+        label: "Current Site Details",
         href: "/portal/dashboard/ss/site",
       },
       {
@@ -208,33 +216,22 @@ const ssSidebar: SidebarSection[] = [
         label: "Schedule",
         href: "/portal/dashboard/ss/schedule",
       },
-    ],
-  },
-  {
-    label: "DAILY LOGS",
-    items: [
-      {
-        type: "link",
-        icon: "clock",
-        label: "Logs",
-        href: "/portal/dashboard/ss/logs",
-      },
-    ],
-  },
-  {
-    label: "VIEW ONLY",
-    items: [
-      {
-        type: "link",
-        icon: "users",
-        label: "Workers",
-        href: "/portal/dashboard/ss/workers",
-      },
       {
         type: "link",
         icon: "flag",
         label: "Phases",
         href: "/portal/dashboard/ss/phases",
+      },
+      {
+        type: "group",
+        icon: "clock",
+        label: "Logs",
+        id: "ss-logs",
+        children: [
+          { label: "Workers Log", href: "/portal/dashboard/ss/logs/workers" },
+          { label: "Materials Log", href: "/portal/dashboard/ss/logs/materials" },
+          { label: "Equipment Log", href: "/portal/dashboard/ss/logs/equipment" },
+        ],
       },
     ],
   },

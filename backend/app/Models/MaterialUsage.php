@@ -18,7 +18,7 @@ class MaterialUsage extends Model
         'phase_id',
         'usage_date',
         'quantity_used',
-        'computed_cost',
+        'unit_cost_at_use',
         'created_by',
         'updated_by',
     ];
@@ -30,6 +30,7 @@ class MaterialUsage extends Model
     {
         return [
             'usage_date' => 'date',
+            'unit_cost_at_use' => 'decimal:6',
         ];
     }
 }

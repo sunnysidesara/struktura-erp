@@ -62,7 +62,7 @@ class StoreUserRequest extends FormRequest
             'last_name' => ['required', 'string', 'max:100', 'regex:/^[\pL][\pL\s.\'-]*$/u'],
             'email' => ['required', 'string', 'email:rfc', 'max:255', 'unique:users,email'],
             'contact_number' => ['sometimes', 'nullable', 'string', 'max:30', 'regex:/^[0-9+()\s.-]*$/'],
-            'password' => ['required', 'string', 'confirmed', Password::min(8)],
+            'password' => ['required', 'string', 'confirmed', Password::default()],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }

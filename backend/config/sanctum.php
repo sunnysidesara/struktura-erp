@@ -50,7 +50,19 @@ return [
     |
     */
 
-    'expiration' => null,
+    'expiration' => (int) env('SANCTUM_EXPIRATION', 480),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Idle Timeout (minutes)
+    |--------------------------------------------------------------------------
+    |
+    | A bearer token that has not been used for this many minutes is revoked
+    | automatically (sliding window). Set to 0 to disable.
+    |
+    */
+
+    'idle_timeout' => (int) env('SANCTUM_IDLE_TIMEOUT', 30),
 
     /*
     |--------------------------------------------------------------------------

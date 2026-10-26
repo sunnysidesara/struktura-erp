@@ -5,7 +5,6 @@ namespace Database\Seeders;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 /**
  * Example accounts covering every role (default password: "password").
@@ -46,7 +45,7 @@ class ExampleUsersSeeder extends Seeder
                     'first_name' => $user['first_name'],
                     'last_name' => $user['last_name'],
                     'email' => $user['email'],
-                    'password_hash' => Hash::make('password'),
+                    'password_hash' => 'password', // The model's 'hashed' cast hashes it once.
                     'is_active' => true,
                 ],
             );

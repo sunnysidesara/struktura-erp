@@ -35,7 +35,7 @@ class UpdateUserRequest extends FormRequest
                 Rule::unique('users', 'email')->ignore($userId, 'user_id'),
             ],
             // Password is optional on update; when present it must be confirmed.
-            'password' => ['sometimes', 'string', 'confirmed', Password::min(8)],
+            'password' => ['sometimes', 'string', 'confirmed', Password::default()],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }

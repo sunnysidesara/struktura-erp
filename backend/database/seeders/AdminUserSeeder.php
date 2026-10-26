@@ -5,7 +5,6 @@ namespace Database\Seeders;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 /**
  * TEMPORARY — Dummy admin account for local development.
@@ -29,7 +28,7 @@ class AdminUserSeeder extends Seeder
                 'first_name' => 'Dummy',
                 'last_name' => 'Admin',
                 // Default credential for local development only.
-                'password_hash' => Hash::make('password'),
+                'password_hash' => 'password', // The model's 'hashed' cast hashes it once.
                 'is_active' => true,
             ],
         );

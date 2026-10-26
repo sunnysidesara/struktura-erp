@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { searchPm, type PmSearchResults } from "@/lib/api";
 import { SaPage, SaPanel, SaTable, StatusBadge, Tabs, money, type SaColumn } from "@/app/portal/dashboard/sa/_components/SaPage";
 
@@ -9,15 +10,28 @@ type PhaseHit = PmSearchResults["phases"][number];
 type LaborerHit = PmSearchResults["laborers"][number];
 
 export default function PmSearchPage() {
-  const [term, setTerm] = useState("");
+  return (
+    <Suspense fallback={null}>
+      <PmSearchResults />
+    </Suspense>
+  );
+}
+
+function PmSearchResults() {
+  const searchParams = useSearchParams();
+  const query = searchParams.get("q")?.trim() ?? "";
   const [results, setResults] = useState<PmSearchResults | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"projects" | "phases" | "laborers">("projects");
 
-  const runSearch = async (value: string) => {
+  const runSearch = useCallback(async (value: string) => {
     const q = value.trim();
-    if (!q) { setResults(null); setError(""); return; }
+    if (!q) {
+      setResults(null);
+      setError("");
+      return;
+    }
 
     setLoading(true);
     setError("");
@@ -29,21 +43,19 @@ export default function PmSearchPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    void runSearch(term);
-  };
-
-  // The dashboard header search box lands here with ?q=...
-  useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q")?.trim();
-    if (!q) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTerm(q);
-    void runSearch(q);
   }, []);
+
+  useEffect(() => {
+    if (!query) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResults(null);
+      setError("");
+      setLoading(false);
+      return;
+    }
+
+    void runSearch(query);
+  }, [query, runSearch]);
 
   const projectColumns: SaColumn<ProjectHit>[] = [
     { key: "name", label: "Project", render: (row) => row.project_name },
@@ -67,12 +79,17 @@ export default function PmSearchPage() {
 
   return (
     <SaPage kicker="Search" title="Search" subtitle="Find projects, phases and laborers">
-      <SaPanel title="Search the system" filters={<form onSubmit={submit} style={{ display: "flex", gap: "0.5rem" }}>
-        <input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search..." />
-        <button type="submit" style={{ border: "none", background: "#ca8a04", color: "#ffffff", padding: "0.7rem 1rem", borderRadius: "2px", fontWeight: 700, cursor: "pointer" }}>Search</button>
-      </form>}>
-        {loading ? <p style={{ margin: 0, color: "#64748b", fontSize: "0.82rem" }}>Searching...</p> : error ? <p style={{ margin: 0, color: "#a16207", fontSize: "0.82rem" }}>{error}</p> : <p style={{ margin: 0, color: "#64748b", fontSize: "0.82rem" }}>{results ? `Results for "${term}".` : "Enter a term and press Search."}</p>}
-      </SaPanel>
+      {loading ? (
+        <p style={{ margin: 0, color: "#64748b", fontSize: "0.82rem" }}>Searching...</p>
+      ) : error ? (
+        <p style={{ margin: 0, color: "#a16207", fontSize: "0.82rem" }}>{error}</p>
+      ) : (
+        <p style={{ margin: 0, color: "#64748b", fontSize: "0.82rem" }}>
+          {results
+            ? `Results for "${query}".`
+            : "Use the search bar in the top header to search projects, phases and laborers."}
+        </p>
+      )}
 
       {results ? (
         <>

@@ -18,7 +18,7 @@ class EquipmentUsage extends Model
         'phase_id',
         'usage_date',
         'hours_used',
-        'computed_cost',
+        'hourly_rate_at_use',
         'created_by',
         'updated_by',
     ];
@@ -30,6 +30,7 @@ class EquipmentUsage extends Model
     {
         return [
             'usage_date' => 'date',
+            'hourly_rate_at_use' => 'decimal:6',
         ];
     }
 }

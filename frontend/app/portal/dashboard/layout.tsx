@@ -12,6 +12,12 @@ import {
   useState,
 } from "react";
 import styles from "./layout.module.css";
+import AppBootScreen from "./_components/AppBootScreen";
+import AppLoadingScreen from "./_components/AppLoadingScreen";
+import { PmProjectSwitcher } from "./pm/_components/PmProjectSwitcher";
+import { usePmProject } from "./pm/_components/projectSelection";
+import { SsSiteSwitcher } from "./ss/_components/SsSiteSwitcher";
+import { useSsSite } from "./ss/_components/siteSelection";
 import {
   getSidebarData,
   type IconName,
@@ -39,8 +45,8 @@ const roleLabels: Record<UserRole, string> = {
   SS: "Site Supervisor",
 };
 
-// The header search box replaces the old sidebar "Search" link: it always jumps
-// to the search screen that belongs to the signed-in role.
+// The header search box jumps to the search screen that belongs to the
+// signed-in role. Site Supervisors search within their selected site.
 const roleSearchPath: Record<UserRole, string> = {
   SA: "/portal/dashboard/sa/search",
   PM: "/portal/dashboard/pm/search",
@@ -315,9 +321,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         // transient and must not wipe a valid session, otherwise a slow or
         // restarting backend bounces the user straight back to the login page.
         console.error("[dashboard] auth check failed", err);
-        const rejected =
-          err instanceof ApiError && (err.status === 401 || err.status === 403);
-        if (rejected) {
+        // A 401 is handled centrally by lib/api.ts (clear + redirect with a
+        // session-expired message). Only handle a role rejection here.
+        if (err instanceof ApiError && err.status === 403) {
           clearSession();
           router.replace("/portal");
         }
@@ -332,6 +338,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     () => (user ? getSidebarData(user.role) : []),
     [user],
   );
+
+  // Project scope: the header switcher and the sidebar lock share one store per
+  // role. Passing `enabled` keeps the other role's endpoint from being called.
+  const ssScope = useSsSite(user?.role === "SS");
+  const pmScope = usePmProject(user?.role === "PM");
+  const activeProjectId =
+    user?.role === "SS" ? ssScope.selectedId : user?.role === "PM" ? pmScope.selectedId : null;
+  // Overview stays reachable; every project-scoped page waits for a selection.
+  const navLocked =
+    (user?.role === "PM" || user?.role === "SS") && activeProjectId === null;
 
   // Accordion behaviour: only the section that owns the current route is open.
   // Clicking a group stores an override for this path; navigating resets it.
@@ -461,6 +477,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     router.push(`${roleSearchPath[user.role]}?q=${encodeURIComponent(term)}`);
   };
 
+  const searchForm = (
+    <form
+      className={styles.searchForm}
+      role="search"
+      onSubmit={handleSearch}
+    >
+      <Icon name="search" className={styles.searchIcon} />
+      <input
+        type="search"
+        className={styles.searchInput}
+        value={searchTerm}
+        onChange={(event) => setSearchTerm(event.target.value)}
+        placeholder="Search..."
+        aria-label="Search the workspace"
+      />
+    </form>
+  );
+
   const handleLogout = () => {
     // Optimistic sign-out: revoke the token in the background and leave at once
     // so the user never waits on the network.
@@ -471,7 +505,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   };
 
   if (!user) {
-    return null;
+    return <AppBootScreen />;
   }
 
   const userName = `${user.first_name} ${user.last_name}`.trim();
@@ -513,21 +547,21 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             />
           </div>
 
-          <form
-            className={styles.searchForm}
-            role="search"
-            onSubmit={handleSearch}
-          >
-            <Icon name="search" className={styles.searchIcon} />
-            <input
-              type="search"
-              className={styles.searchInput}
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search..."
-              aria-label="Search the workspace"
-            />
-          </form>
+          {user.role === "SS" ? (
+            /* Supervisors swap sites and can search within the active site. */
+            <>
+              <SsSiteSwitcher />
+              {searchForm}
+            </>
+          ) : user.role === "PM" ? (
+            /* Managers swap the active project and search their projects. */
+            <>
+              <PmProjectSwitcher />
+              {searchForm}
+            </>
+          ) : (
+            searchForm
+          )}
         </div>
 
         <div className={styles.headerRight}>
@@ -683,6 +717,22 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               {section.items.map((item) => {
                 if (item.type === "link") {
                   const isActive = pathname === item.href;
+                  const isLocked = navLocked && item.href !== rolePath[user.role];
+
+                  if (isLocked) {
+                    return (
+                      <span
+                        key={item.href}
+                        className={`${styles.navItem} ${styles.navItemLocked}`}
+                        aria-disabled="true"
+                        tabIndex={-1}
+                        data-tooltip="Select a project first"
+                      >
+                        <Icon name={item.icon} className={styles.navIcon} />
+                        <span>{item.label}</span>
+                      </span>
+                    );
+                  }
 
                   return (
                     <Link
@@ -704,6 +754,23 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
                 const expanded = openGroup === item.id;
                 const groupActive = isGroupActive(item);
+
+                if (navLocked) {
+                  return (
+                    <div className={styles.navGroup} key={item.id}>
+                      <span
+                        className={`${styles.navItem} ${styles.navItemLocked}`}
+                        aria-disabled="true"
+                        tabIndex={-1}
+                        data-tooltip="Select a project first"
+                      >
+                        <Icon name={item.icon} className={styles.navIcon} />
+                        <span>{item.label}</span>
+                        <Icon name="chevron" className={styles.groupChevron} />
+                      </span>
+                    </div>
+                  );
+                }
 
                 return (
                   <div className={styles.navGroup} key={item.id}>
@@ -779,7 +846,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         />
       ) : null}
 
-      <main className={styles.mainContent}>{children}</main>
+      <main className={styles.mainContent}>
+        {children}
+        <AppLoadingScreen />
+      </main>
 
       {loggingOut ? (
         <div className={styles.logoutOverlay} role="status" aria-live="assertive">

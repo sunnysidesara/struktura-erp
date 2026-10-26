@@ -1,0 +1,37 @@
+/* Full-frame loading layer shown while the API / database is working. */
+
+.loadingScreen {
+  position: fixed;
+  top: 64px;
+  left: 240px;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  animation: loadingFadeIn 160ms ease-out;
+}
+
+@keyframes loadingFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* The sidebar collapses to an off-canvas drawer at this width. */
+@media (max-width: 1024px) {
+  .loadingScreen {
+    left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingScreen {
+    animation: none;
+  }
+}

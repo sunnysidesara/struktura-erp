@@ -6,12 +6,15 @@ import {
   createPmAssignment,
   type PmLaborer,
   type PmPhase,
+  type PmProject,
 } from "@/lib/api";
+import { money } from "@/app/portal/dashboard/sa/_components/SaPage";
 import { FormModal, ModalField, ModalGrid } from "../_components/FormModal";
 
 export function AssignModal({
   open,
   laborer,
+  project,
   phases,
   initialPhaseId,
   onClose,
@@ -19,6 +22,7 @@ export function AssignModal({
 }: {
   open: boolean;
   laborer: PmLaborer | null;
+  project: PmProject;
   phases: PmPhase[];
   initialPhaseId?: string;
   onClose: () => void;
@@ -26,7 +30,9 @@ export function AssignModal({
 }) {
   const [phaseId, setPhaseId] = useState("");
   const [role, setRole] = useState("");
+  const [rateOverride, setRateOverride] = useState("");
   const [phaseError, setPhaseError] = useState("");
+  const [rateError, setRateError] = useState("");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -37,7 +43,9 @@ export function AssignModal({
 
     setPhaseId(initialPhaseId ?? "");
     setRole("");
+    setRateOverride("");
     setPhaseError("");
+    setRateError("");
     setFormError("");
     setSaving(false);
   }, [open, laborer, initialPhaseId]);
@@ -45,6 +53,7 @@ export function AssignModal({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPhaseError("");
+    setRateError("");
     setFormError("");
 
     if (!laborer) {
@@ -57,6 +66,13 @@ export function AssignModal({
       return;
     }
 
+    const override = rateOverride.trim() ? Number(rateOverride) : null;
+
+    if (override !== null && (!Number.isFinite(override) || override <= 0)) {
+      setRateError("Enter an override greater than zero, or leave it blank.");
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -64,6 +80,7 @@ export function AssignModal({
         laborer_id: laborer.laborer_id,
         phase_id: Number(phaseId),
         role_on_task: role.trim() || null,
+        hourly_rate_ovveride: override,
       });
 
       onSaved(`${laborer.first_name} ${laborer.last_name} was assigned to the phase.`);
@@ -73,6 +90,10 @@ export function AssignModal({
 
         if (first("phase_id")) {
           setPhaseError(first("phase_id") as string);
+          return;
+        }
+        if (first("hourly_rate_ovveride")) {
+          setRateError(first("hourly_rate_ovveride") as string);
           return;
         }
         if (first("laborer_id")) {
@@ -100,6 +121,14 @@ export function AssignModal({
       saving={saving}
       error={formError}
     >
+      <ModalField label="Site" htmlFor="assign-site">
+        <input
+          id="assign-site"
+          value={`${project.code} · ${project.project_name}`}
+          readOnly
+        />
+      </ModalField>
+
       <ModalField label="Laborer" htmlFor="assign-laborer">
         <input
           id="assign-laborer"
@@ -117,7 +146,7 @@ export function AssignModal({
           <option value="">Select a phase</option>
           {phases.map((phase) => (
             <option key={phase.phase_id} value={phase.phase_id}>
-              {phase.project} - {phase.phase_name}
+              {phase.sequence_no}. {phase.phase_name}
             </option>
           ))}
         </select>
@@ -135,6 +164,28 @@ export function AssignModal({
             onChange={(event) => setRole(event.target.value)}
             maxLength={100}
             placeholder="Role on task"
+          />
+        </ModalField>
+
+        <ModalField
+          label="Hourly Rate Override"
+          htmlFor="assign-rate-override"
+          error={rateError}
+          hint={
+            laborer
+              ? `Optional. Base rate: ${money(laborer.hourly_rate)}. Leave blank to use it.`
+              : "Optional. Leave blank to use the laborer's base rate."
+          }
+        >
+          <input
+            id="assign-rate-override"
+            type="number"
+            min="0.01"
+            step="0.01"
+            inputMode="decimal"
+            value={rateOverride}
+            onChange={(event) => setRateOverride(event.target.value)}
+            placeholder="e.g. 300.00"
           />
         </ModalField>
       </ModalGrid>

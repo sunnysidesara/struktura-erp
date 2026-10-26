@@ -5,7 +5,6 @@ namespace Database\Factories;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
@@ -32,7 +31,7 @@ class UserFactory extends Factory
             'first_name' => fake()->firstName(),
             'last_name' => fake()->lastName(),
             'email' => fake()->unique()->safeEmail(),
-            'password_hash' => static::$password ??= Hash::make('password'),
+            'password_hash' => static::$password ??= 'password', // Hashed once by the model cast.
             'is_active' => true,
             'remember_token' => Str::random(10),
         ];

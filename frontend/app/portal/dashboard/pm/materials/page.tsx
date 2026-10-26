@@ -1,26 +1,51 @@
 "use client";
 
 import { useState } from "react";
-import type { PmProject } from "@/lib/api";
-import { ProjectMaster } from "../_components/ProjectMaster";
-import { UsageDetail } from "../_components/UsageDetail";
+import { SaPage, Tabs } from "@/app/portal/dashboard/sa/_components/SaPage";
+import { CataloguePanel } from "../_components/CataloguePanel";
+import { PmProjectGate } from "../_components/PmProjectGate";
+import { usePmProject } from "../_components/projectSelection";
+import { UsagePanel } from "../_components/UsageDetail";
+
+type ResourceTab = "usage" | "catalogue";
+
+const TABS: { id: ResourceTab; label: string }[] = [
+  { id: "usage", label: "Usage" },
+  { id: "catalogue", label: "Catalogue" },
+];
 
 export default function MaterialsPage() {
-  const [openProject, setOpenProject] = useState<PmProject | null>(null);
+  const { selected } = usePmProject();
+  const [tab, setTab] = useState<ResourceTab>("usage");
 
   return (
-    <>
-      <ProjectMaster
-        kicker="Resources"
-        title="Materials"
-        subtitle="Choose a project to review and log its material usage"
-        actionLabel="View Materials"
-        onOpen={setOpenProject}
-      />
+    <SaPage
+      kicker="Resources"
+      title="Materials"
+      subtitle={
+        selected
+          ? `${selected.code} · ${selected.project_name}`
+          : "Select a project to review its material usage and catalogue."
+      }
+    >
+      <PmProjectGate>
+        {(projectId) => (
+          <>
+            <Tabs
+              items={TABS}
+              active={tab}
+              onChange={setTab}
+              label="Material views"
+            />
 
-      {openProject ? (
-        <UsageDetail project={openProject} kind="material" onClose={() => setOpenProject(null)} />
-      ) : null}
-    </>
+            {tab === "usage" ? (
+              <UsagePanel projectId={projectId} kind="material" />
+            ) : (
+              <CataloguePanel kind="material" />
+            )}
+          </>
+        )}
+      </PmProjectGate>
+    </SaPage>
   );
 }

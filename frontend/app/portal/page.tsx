@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import styles from "./page.module.css";
 import {
   ApiError,
@@ -12,6 +12,9 @@ import {
   saveSession,
   toSessionUser,
 } from "@/lib/api";
+import { resetPmSelection } from "@/app/portal/dashboard/pm/_components/projectSelection";
+import { resetSsSelection } from "@/app/portal/dashboard/ss/_components/siteSelection";
+import SpinnerRing from "./_components/SpinnerRing";
 
 export default function PortalPage() {
   const router = useRouter();
@@ -21,6 +24,24 @@ export default function PortalPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("reason") !== "session-expired") {
+      return;
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setError("Your session expired. Please sign in again.");
+    params.delete("reason");
+    const query = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}`,
+    );
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -49,7 +70,13 @@ export default function PortalPage() {
         return;
       }
 
+      // Every sign-in starts with no project selected: the sidebar stays
+      // locked until the user picks one from Overview or the header switcher.
+      resetPmSelection();
+      resetSsSelection();
+
       saveSession(token, sessionUser);
+      setRedirecting(true);
       router.push(ROLE_DASHBOARD_PATHS[sessionUser.role]);
     } catch (err) {
       setError(
@@ -119,7 +146,6 @@ export default function PortalPage() {
                 type="text"
                 value={idNumber}
                 onChange={(event) => setIdNumber(event.target.value.toUpperCase())}
-                placeholder="e.g., SYS010001"
                 autoComplete="username"
                 autoFocus
                 required
@@ -178,6 +204,17 @@ export default function PortalPage() {
           </p>
         </div>
       </main>
+
+      {redirecting ? (
+        <div
+          className={styles.redirectOverlay}
+          role="status"
+          aria-live="polite"
+          aria-label="Signing you in"
+        >
+          <SpinnerRing />
+        </div>
+      ) : null}
     </>
   );
 }

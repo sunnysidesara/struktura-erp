@@ -7,12 +7,13 @@ use App\Models\EquipmentUsage;
 use App\Models\LaborHourLog;
 use App\Models\Material;
 use App\Models\MaterialUsage;
-use App\Models\Project;
+use App\Models\ProjectPhase;
 use App\Models\Role;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SsController extends Controller
 {
@@ -81,34 +82,28 @@ class SsController extends Controller
     }
 
     /**
+     * A phase-specific assignment rate wins over the laborer's base rate.
+     */
+    private function rateForAssignment(object $assignment): float
+    {
+        return $assignment->hourly_rate_ovveride !== null
+            ? (float) $assignment->hourly_rate_ovveride
+            : (float) $assignment->hourly_rate;
+    }
+
+    /**
      * One labor entry per worker, per phase, per day.
      */
-    private function laborLogExists(int $laborerId, int $phaseId, string $date, ?int $exceptLogId = null): bool
+    private function laborLogExists(int $laborerId, int $phaseId, string $date, ?int $exceptLogId = null, ?string $shift = null): bool
     {
         return DB::table('labor_hour_log as lhl')
             ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'lhl.assignment_id')
             ->where('wa.laborer_id', $laborerId)
             ->where('wa.phase_id', $phaseId)
             ->whereDate('lhl.log_date', $date)
+            ->when($shift !== null, fn ($query) => $query->where('lhl.shift', $shift))
             ->when($exceptLogId !== null, fn ($query) => $query->where('lhl.log_id', '!=', $exceptLogId))
             ->exists();
-    }
-
-    /**
-     * Move a project's remaining budget (negative = spend, positive = refund).
-     * Uses the Project model so the AuditObserver records every change.
-     */
-    private function adjustProjectBudget(int $projectId, float $amount): void
-    {
-        $project = Project::query()->lockForUpdate()->find($projectId);
-
-        if (! $project) {
-            return;
-        }
-
-        $project->update([
-            'remaining_budget' => round((float) $project->remaining_budget + $amount, 2),
-        ]);
     }
 
     /**
@@ -183,11 +178,16 @@ class SsController extends Controller
                 'p.end_date',
                 'p.deadline',
                 'p.status',
+                'p.approved_budget',
+                'p.materials_budget',
+                'p.equipment_budget',
                 'sup.id_number as supervisor_number',
                 'sup.first_name as supervisor_first',
                 'sup.last_name as supervisor_last',
+                'sup.email as supervisor_email',
                 'pm.first_name as manager_first',
-                'pm.last_name as manager_last'
+                'pm.last_name as manager_last',
+                'pm.email as manager_email'
             )
             ->first();
     }
@@ -209,7 +209,195 @@ class SsController extends Controller
     }
 
     /**
-     * Site banner payload used by every SS screen.
+     * Materials / equipment / labor spend recorded against the given projects.
+     *
+     * @param  array<int, int>  $ids
+     * @return array{materials: float, equipment: float, labor: float}
+     */
+    private function projectSpend(array $ids): array
+    {
+        if (empty($ids)) {
+            return ['materials' => 0.0, 'equipment' => 0.0, 'labor' => 0.0];
+        }
+
+        $materials = (float) DB::table('material_usage as mu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'mu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->sum('mu.computed_cost');
+
+        $equipment = (float) DB::table('equipment_usage as eu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'eu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->sum('eu.computed_cost');
+
+        $labor = (float) DB::table('labor_hour_log as lhl')
+            ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'lhl.assignment_id')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->sum('lhl.computed_cost');
+
+        return [
+            'materials' => round($materials, 2),
+            'equipment' => round($equipment, 2),
+            'labor' => round($labor, 2),
+        ];
+    }
+
+    /**
+     * Materials / equipment budget provisioned for the given projects.
+     *
+     * @param  array<int, int>  $ids
+     * @return array{materials: float, equipment: float, total: float}
+     */
+    private function resourceBudget(array $ids): array
+    {
+        if (empty($ids)) {
+            return ['materials' => 0.0, 'equipment' => 0.0, 'total' => 0.0];
+        }
+
+        $row = DB::table('projects')
+            ->whereIn('project_id', $ids)
+            ->selectRaw('SUM(materials_budget) as materials, SUM(equipment_budget) as equipment, SUM(approved_budget) as total')
+            ->first();
+
+        return [
+            'materials' => round((float) ($row->materials ?? 0), 2),
+            'equipment' => round((float) ($row->equipment ?? 0), 2),
+            'total' => round((float) ($row->total ?? 0), 2),
+        ];
+    }
+
+    /**
+     * Return a budget error when a proposed category cost would exceed the
+     * project's allocated amount. The current usage row is excluded when a
+     * correction replaces an existing entry.
+     */
+    private function budgetViolation(
+        int $projectId,
+        string $category,
+        float $additionalCost,
+        ?int $excludeUsageId = null,
+    ): ?string {
+        $project = DB::table('projects')
+            ->where('project_id', $projectId)
+            ->first(['project_id', 'approved_budget', 'materials_budget', 'equipment_budget']);
+
+        if (! $project) {
+            return 'The project for this log could not be found.';
+        }
+
+        $limit = match ($category) {
+            'materials' => (float) $project->materials_budget,
+            'equipment' => (float) $project->equipment_budget,
+            'labor' => max(
+                0.0,
+                (float) $project->approved_budget
+                    - (float) $project->materials_budget
+                    - (float) $project->equipment_budget
+            ),
+            default => 0.0,
+        };
+
+        $query = match ($category) {
+            'materials' => DB::table('material_usage as usage')
+                ->join('project_phases as ph', 'ph.phase_id', '=', 'usage.phase_id')
+                ->where('ph.project_id', $projectId),
+            'equipment' => DB::table('equipment_usage as usage')
+                ->join('project_phases as ph', 'ph.phase_id', '=', 'usage.phase_id')
+                ->where('ph.project_id', $projectId),
+            'labor' => DB::table('labor_hour_log as usage')
+                ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'usage.assignment_id')
+                ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+                ->where('ph.project_id', $projectId),
+            default => null,
+        };
+
+        if ($query === null) {
+            return null;
+        }
+
+        if ($excludeUsageId !== null) {
+            $key = match ($category) {
+                'materials' => 'usage.material_usage_id',
+                'equipment' => 'usage.equipment_usage_id',
+                'labor' => 'usage.log_id',
+            };
+            $query->where($key, '!=', $excludeUsageId);
+        }
+
+        $spent = round((float) $query->sum('usage.computed_cost'), 2);
+
+        if (round($spent + $additionalCost, 2) <= round($limit, 2)) {
+            return null;
+        }
+
+        return match ($category) {
+            'materials' => 'This material usage exceeds the remaining materials budget.',
+            'equipment' => 'This equipment usage exceeds the remaining equipment budget.',
+            'labor' => 'This labor log exceeds the remaining labor budget.',
+            default => 'This entry exceeds the allocated budget.',
+        };
+    }
+
+    /**
+     * Overall progress per project (average of its phase progress).
+     *
+     * @param  array<int, int>  $ids
+     * @return array<int, int>
+     */
+    private function projectProgress(array $ids): array
+    {
+        $buckets = [];
+
+        foreach ($this->phasesPayload($ids) as $phase) {
+            $buckets[$phase['project_id']][] = $phase['progress'];
+        }
+
+        $progress = [];
+
+        foreach ($buckets as $projectId => $values) {
+            $progress[$projectId] = count($values) > 0
+                ? (int) round(array_sum($values) / count($values))
+                : 0;
+        }
+
+        return $progress;
+    }
+
+    /**
+     * Factual description of the project built from its own record + phases.
+     *
+     * @param  array<int, array<string, mixed>>  $phases
+     */
+    private function describeProject(object $project, array $phases): string
+    {
+        $parts = [];
+
+        if ($project->client_name) {
+            $parts[] = 'Client: '.$project->client_name.'.';
+        }
+
+        if ($project->location) {
+            $parts[] = 'Site located at '.$project->location.'.';
+        }
+
+        if ($phases !== []) {
+            $names = array_slice(array_column($phases, 'name'), 0, 3);
+            $parts[] = 'Scope covers '.count($phases).' phases: '.implode(', ', $names)
+                .(count($phases) > count($names) ? ' and more' : '').'.';
+        }
+
+        if ($project->start_date && $project->end_date) {
+            $parts[] = 'Scheduled from '.$project->start_date.' to '.$project->end_date.'.';
+        } elseif ($project->end_date) {
+            $parts[] = 'Target completion '.$project->end_date.'.';
+        }
+
+        return implode(' ', $parts);
+    }
+
+    /**
+     * Site banner + financial summary used by every SS screen.
      */
     private function sitePayload(array $ids): ?array
     {
@@ -219,20 +407,42 @@ class SsController extends Controller
             return null;
         }
 
+        $projectId = (int) $project->project_id;
+        $phases = $this->phasesPayload([$projectId]);
+        $spend = $this->projectSpend([$projectId]);
+        $approved = (float) $project->approved_budget;
+        $materialsBudget = (float) $project->materials_budget;
+        $equipmentBudget = (float) $project->equipment_budget;
+
         return [
-            'project_id' => (int) $project->project_id,
+            'project_id' => $projectId,
             'code' => 'PRJ-'.str_pad((string) $project->project_id, 4, '0', STR_PAD_LEFT),
             'project' => $project->project_name,
+            'description' => $this->describeProject($project, $phases),
             'location' => $project->location,
             'client' => $project->client_name,
             'supervisor' => trim(($project->supervisor_first ?? '').' '.($project->supervisor_last ?? '')),
             'supervisor_id' => $project->supervisor_number,
+            'supervisorEmail' => $project->supervisor_email,
             'manager' => trim(($project->manager_first ?? '').' '.($project->manager_last ?? '')),
+            'managerEmail' => $project->manager_email,
             'status' => $project->status,
             'startDate' => $project->start_date,
             'endDate' => $project->end_date ?? $project->deadline,
             'deadline' => $project->deadline,
             'currentPhase' => $this->currentPhase($ids),
+            'budgets' => [
+                'total' => round($approved, 2),
+                'materials' => round($materialsBudget, 2),
+                'equipment' => round($equipmentBudget, 2),
+                'labor' => round(max(0.0, $approved - $materialsBudget - $equipmentBudget), 2),
+            ],
+            'spend' => [
+                'materials' => $spend['materials'],
+                'equipment' => $spend['equipment'],
+                'labor' => $spend['labor'],
+                'total' => round($spend['materials'] + $spend['equipment'] + $spend['labor'], 2),
+            ],
             'coordinates' => [
                 'lat' => $project->latitude !== null ? (float) $project->latitude : null,
                 'lng' => $project->longitude !== null ? (float) $project->longitude : null,
@@ -264,6 +474,7 @@ class SsController extends Controller
                 'planned_start',
                 'planned_end',
                 'status',
+                'completion_requested_at',
                 'required_skill_id'
             )
             ->get();
@@ -279,7 +490,15 @@ class SsController extends Controller
             ->get()
             ->keyBy('phase_id');
 
-        return $phases->map(function ($phase) use ($counts) {
+        $workers = DB::table('workforce_assignment as wa')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->where('wa.status', 'Active')
+            ->groupBy('wa.phase_id')
+            ->select('wa.phase_id', DB::raw('COUNT(DISTINCT wa.laborer_id) as workers'))
+            ->pluck('workers', 'phase_id');
+
+        return $phases->map(function ($phase) use ($counts, $workers) {
             $row = $counts->get($phase->phase_id);
             $total = (int) ($row->total ?? 0);
             $done = (int) ($row->done ?? 0);
@@ -301,6 +520,8 @@ class SsController extends Controller
                 'sequence' => (int) ($phase->sequence_no ?? 0),
                 'progress' => $progress,
                 'status' => $phase->status,
+                'completionRequestedAt' => $phase->completion_requested_at,
+                'workers' => (int) ($workers[$phase->phase_id] ?? 0),
                 'plannedStart' => $phase->planned_start,
                 'plannedEnd' => $phase->planned_end,
                 'required_skill_id' => $phase->required_skill_id !== null ? (int) $phase->required_skill_id : null,
@@ -337,6 +558,7 @@ class SsController extends Controller
         $laborers = DB::table('laborer as l')
             ->join('workforce_assignment as wa', 'wa.laborer_id', '=', 'l.laborer_id')
             ->whereIn('wa.phase_id', $phaseIds)
+            ->where('wa.status', 'Active')
             ->select('l.laborer_id', 'l.first_name', 'l.last_name', 'l.employment_status', 'l.contact_number')
             ->distinct()
             ->orderBy('l.laborer_id')
@@ -420,6 +642,7 @@ class SsController extends Controller
                 'name' => $row->material_name,
                 'unit' => $row->unit_of_measure,
                 'stock' => (int) $row->stock_quantity,
+                'unit_cost' => (float) $row->unit_cost,
             ])->values()->all();
     }
 
@@ -436,6 +659,7 @@ class SsController extends Controller
                 'name' => $row->equipment_name,
                 'type' => $row->equipment_type,
                 'status' => $row->equipment_status,
+                'hourly_rate' => (float) $row->hourly_rental_rate,
             ])->values()->all();
     }
     /**
@@ -461,8 +685,12 @@ class SsController extends Controller
                 'lhl.log_id',
                 'lhl.assignment_id',
                 'lhl.log_date',
+                'lhl.shift',
+                'lhl.time_in',
+                'lhl.time_out',
                 'lhl.regular_hours',
                 'lhl.overtime_hours',
+                'lhl.computed_cost',
                 'l.first_name',
                 'l.last_name',
                 'ph.phase_id',
@@ -476,10 +704,14 @@ class SsController extends Controller
                 'log_id' => (int) $row->log_id,
                 'assignment_id' => (int) $row->assignment_id,
                 'date' => $row->log_date,
+                'shift' => $row->shift ?? 'Morning',
+                'time_in' => $row->time_in ? substr((string) $row->time_in, 0, 5) : null,
+                'time_out' => $row->time_out ? substr((string) $row->time_out, 0, 5) : null,
                 'worker' => trim($row->first_name.' '.$row->last_name),
                 'regular' => (float) $row->regular_hours,
                 'overtime' => (float) $row->overtime_hours,
                 'total' => (float) $row->regular_hours + (float) $row->overtime_hours,
+                'expense' => round((float) ($row->computed_cost ?? 0), 2),
                 'phase_id' => (int) $row->phase_id,
                 'phase' => $row->phase_name,
                 'project_id' => (int) $row->project_id,
@@ -511,6 +743,7 @@ class SsController extends Controller
                 'mu.material_id',
                 'mu.usage_date',
                 'mu.quantity_used',
+                'mu.computed_cost',
                 'm.material_name',
                 'm.unit_of_measure',
                 'ph.phase_id',
@@ -527,6 +760,7 @@ class SsController extends Controller
                 'material' => $row->material_name,
                 'quantity' => (float) $row->quantity_used,
                 'unit' => $row->unit_of_measure,
+                'expense' => round((float) ($row->computed_cost ?? 0), 2),
                 'phase_id' => (int) $row->phase_id,
                 'phase' => $row->phase_name,
                 'project_id' => (int) $row->project_id,
@@ -558,6 +792,7 @@ class SsController extends Controller
                 'eu.equipment_id',
                 'eu.usage_date',
                 'eu.hours_used',
+                'eu.computed_cost',
                 'e.equipment_name',
                 'ph.phase_id',
                 'ph.project_name as phase_name',
@@ -572,6 +807,7 @@ class SsController extends Controller
                 'date' => $row->usage_date,
                 'equipment' => $row->equipment_name,
                 'hours' => (float) $row->hours_used,
+                'expense' => round((float) ($row->computed_cost ?? 0), 2),
                 'phase_id' => (int) $row->phase_id,
                 'phase' => $row->phase_name,
                 'project_id' => (int) $row->project_id,
@@ -723,6 +959,8 @@ class SsController extends Controller
             return [];
         }
 
+        $progress = $this->projectProgress($ids);
+
         return DB::table('projects')
             ->whereIn('project_id', $ids)
             ->orderBy('project_id')
@@ -733,6 +971,7 @@ class SsController extends Controller
                 'project' => $row->project_name,
                 'location' => $row->location,
                 'status' => $row->status,
+                'progress' => $progress[(int) $row->project_id] ?? 0,
             ])->values()->all();
     }
 
@@ -866,6 +1105,7 @@ class SsController extends Controller
                 't.status',
                 'p.project_name',
                 'ph.project_name as phase_name',
+                'ph.status as phase_status',
                 'l.first_name',
                 'l.last_name'
             );
@@ -887,6 +1127,8 @@ class SsController extends Controller
             ->map(fn ($row) => [
                 'id' => 'TSK-'.$row->task_id,
                 'task_id' => (int) $row->task_id,
+                'phase_id' => $row->phase_id !== null ? (int) $row->phase_id : null,
+                'phase_status' => $row->phase_status,
                 'date' => $row->task_date,
                 'time' => $row->start_time ? substr((string) $row->start_time, 0, 5) : '',
                 'title' => $row->title,
@@ -938,6 +1180,8 @@ class SsController extends Controller
         $today = $this->today()->toDateString();
         $logs = $this->materialLogsPayload($ids);
         $todayLogs = array_filter($logs, fn ($log) => $log['date'] === $today);
+        $budget = $this->resourceBudget($ids);
+        $spend = $this->projectSpend($ids);
 
         return response()->json([
             'server_date' => $today,
@@ -949,6 +1193,9 @@ class SsController extends Controller
                 'entries_today' => count($todayLogs),
                 'distinct_today' => count(array_unique(array_column($todayLogs, 'material'))),
                 'total_logs' => count($logs),
+                'materials_allocation' => $budget['materials'],
+                'materials_spent' => $spend['materials'],
+                'materials_remaining' => round($budget['materials'] - $spend['materials'], 2),
             ],
         ]);
     }
@@ -959,6 +1206,8 @@ class SsController extends Controller
         $today = $this->today()->toDateString();
         $logs = $this->equipmentLogsPayload($ids);
         $todayLogs = array_filter($logs, fn ($log) => $log['date'] === $today);
+        $budget = $this->resourceBudget($ids);
+        $spend = $this->projectSpend($ids);
 
         return response()->json([
             'server_date' => $today,
@@ -971,6 +1220,9 @@ class SsController extends Controller
                 'logs_today' => count($todayLogs),
                 'machines_today' => count(array_unique(array_column($todayLogs, 'equipment'))),
                 'total_logs' => count($logs),
+                'equipment_allocation' => $budget['equipment'],
+                'equipment_spent' => $spend['equipment'],
+                'equipment_remaining' => round($budget['equipment'] - $spend['equipment'], 2),
             ],
         ]);
     }
@@ -1007,6 +1259,95 @@ class SsController extends Controller
             ],
         ]);
     }
+    /**
+     * Hours between two "HH:MM" strings, or null when either is missing.
+     */
+    private function hoursFromTimes(?string $timeIn, ?string $timeOut): ?float
+    {
+        if ($timeIn === null || $timeOut === null || $timeIn === '' || $timeOut === '') {
+            return null;
+        }
+
+        $minutes = Carbon::createFromFormat('H:i', $timeIn)->diffInMinutes(Carbon::createFromFormat('H:i', $timeOut), false);
+
+        if ($minutes <= 0) {
+            throw ValidationException::withMessages([
+                'time_out' => ['Time out must be later than time in.'],
+            ]);
+        }
+
+        return round($minutes / 60, 2);
+    }
+
+    /**
+     * Supervisor asks the Project Manager to sign a phase off.
+     */
+    public function requestCompletion(Request $request, int $id): JsonResponse
+    {
+        $ids = $this->projectIds($request);
+        $phase = $this->phaseFor($ids, $id);
+
+        if (! $phase) {
+            return response()->json(['message' => 'This phase is not part of your assigned sites.'], 404);
+        }
+
+        if ($phase->status === 'Completed') {
+            return response()->json(['message' => 'This phase is already completed.'], 422);
+        }
+
+        if ($phase->status !== 'In Progress') {
+            return response()->json([
+                'message' => 'The Project Manager must start this phase before completion can be requested.',
+            ], 422);
+        }
+
+        $totalTasks = DB::table('site_task')->where('phase_id', $id)->count();
+        $openTasks = DB::table('site_task')
+            ->where('phase_id', $id)
+            ->where('status', '!=', 'Done')
+            ->count();
+
+        if ($totalTasks === 0) {
+            return response()->json([
+                'message' => 'Add at least one task before requesting phase completion.',
+            ], 422);
+        }
+
+        if ($openTasks > 0) {
+            return response()->json([
+                'message' => 'Complete all phase tasks before requesting completion.',
+            ], 422);
+        }
+
+        if ($phase->completion_requested_at !== null) {
+            return response()->json([
+                'message' => 'A completion request is already pending for this phase.',
+            ], 422);
+        }
+
+        $model = ProjectPhase::query()->find($id);
+
+        if (! $model) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        $model->update([
+            'completion_requested_at' => Carbon::now(),
+            'completion_requested_by' => $request->user()->user_id,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        $name = $phase->project_name ?? $phase->description ?? 'Phase '.$id;
+
+        return response()->json([
+            'message' => 'Completion requested for "'.$name.'". Your Project Manager has been notified.',
+            'data' => [
+                'phase_id' => $id,
+                'completion_requested_at' => $model->completion_requested_at?->toDateTimeString(),
+            ],
+        ]);
+    }
+
     public function search(Request $request): JsonResponse
     {
         $query = trim((string) $request->query('q', ''));
@@ -1102,9 +1443,16 @@ class SsController extends Controller
         $data = $request->validate([
             'assignment_id' => ['required', 'integer'],
             'log_date' => ['required', 'date', 'before_or_equal:today'],
-            'regular_hours' => ['required', 'numeric', 'min:0', 'max:24'],
+            'shift' => ['nullable', 'in:Morning,Afternoon'],
+            'time_in' => ['nullable', 'date_format:H:i'],
+            'time_out' => ['nullable', 'date_format:H:i'],
+            'regular_hours' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'overtime_hours' => ['nullable', 'numeric', 'min:0', 'max:12'],
         ]);
+
+        $shift = $data['shift'] ?? 'Morning';
+        $timeIn = $data['time_in'] ?? null;
+        $timeOut = $data['time_out'] ?? null;
 
         $ids = $this->projectIds($request);
         $assignment = $this->assignmentFor($ids, (int) $data['assignment_id']);
@@ -1119,11 +1467,11 @@ class SsController extends Controller
             ], 422);
         }
 
-        $regular = round((float) $data['regular_hours'], 2);
+        $regular = $this->hoursFromTimes($timeIn, $timeOut) ?? round((float) ($data['regular_hours'] ?? 0), 2);
         $overtime = round((float) ($data['overtime_hours'] ?? 0), 2);
 
         if ($regular + $overtime <= 0) {
-            return response()->json(['message' => 'Enter at least one hour.'], 422);
+            return response()->json(['message' => 'Enter the shift times or at least one hour.'], 422);
         }
 
         if ($regular + $overtime > 24) {
@@ -1132,31 +1480,33 @@ class SsController extends Controller
             ], 422);
         }
 
-        if ($this->laborLogExists((int) $assignment->laborer_id, (int) $assignment->phase_id, (string) $data['log_date'])) {
+        if ($this->laborLogExists((int) $assignment->laborer_id, (int) $assignment->phase_id, (string) $data['log_date'], null, $shift)) {
             return response()->json([
                 'message' => 'This laborer already has hours logged for this phase on '.$data['log_date'].'. Edit that entry instead.',
             ], 422);
         }
 
-        $rate = $assignment->hourly_rate_ovveride !== null
-            ? (float) $assignment->hourly_rate_ovveride
-            : (float) $assignment->hourly_rate;
-
+        $rate = $this->rateForAssignment($assignment);
         $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
+        $budgetError = $this->budgetViolation((int) $assignment->project_id, 'labor', $cost);
 
-        $logId = DB::transaction(function () use ($data, $regular, $overtime, $cost, $assignment, $request) {
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
+
+        $logId = DB::transaction(function () use ($data, $shift, $timeIn, $timeOut, $regular, $overtime, $rate, $assignment, $request) {
             $log = LaborHourLog::create([
                 'assignment_id' => $assignment->assignment_id,
                 'log_date' => $data['log_date'],
+                'shift' => $shift,
+                'time_in' => $timeIn,
+                'time_out' => $timeOut,
                 'regular_hours' => $regular,
                 'overtime_hours' => $overtime,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => $rate,
                 'created_by' => $request->user()->user_id,
                 'created_at' => now(),
             ]);
-
-            // Audited through the Project model.
-            $this->adjustProjectBudget((int) $assignment->project_id, -$cost);
 
             return $log->log_id;
         });
@@ -1181,7 +1531,10 @@ class SsController extends Controller
         $data = $request->validate([
             'assignment_id' => ['nullable', 'integer'],
             'log_date' => ['required', 'date', 'before_or_equal:today'],
-            'regular_hours' => ['required', 'numeric', 'min:0', 'max:24'],
+            'shift' => ['nullable', 'in:Morning,Afternoon'],
+            'time_in' => ['nullable', 'date_format:H:i'],
+            'time_out' => ['nullable', 'date_format:H:i'],
+            'regular_hours' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'overtime_hours' => ['nullable', 'numeric', 'min:0', 'max:12'],
         ]);
 
@@ -1190,6 +1543,10 @@ class SsController extends Controller
         if (! $log) {
             return response()->json(['message' => 'Labor log not found.'], 404);
         }
+
+        $shift = $data['shift'] ?? $log->shift ?? 'Morning';
+        $timeIn = $data['time_in'] ?? ($log->time_in ? substr((string) $log->time_in, 0, 5) : null);
+        $timeOut = $data['time_out'] ?? ($log->time_out ? substr((string) $log->time_out, 0, 5) : null);
 
         $ids = $this->projectIds($request);
         $original = $this->assignmentFor($ids, (int) $log->assignment_id);
@@ -1213,7 +1570,10 @@ class SsController extends Controller
             ], 422);
         }
 
-        $regular = round((float) $data['regular_hours'], 2);
+        $regular = $this->hoursFromTimes($timeIn, $timeOut)
+            ?? (isset($data['regular_hours'])
+                ? round((float) $data['regular_hours'], 2)
+                : round((float) $log->regular_hours, 2));
         $overtime = round((float) ($data['overtime_hours'] ?? 0), 2);
 
         if ($regular + $overtime <= 0) {
@@ -1230,32 +1590,40 @@ class SsController extends Controller
             (int) $assignment->laborer_id,
             (int) $assignment->phase_id,
             (string) $data['log_date'],
-            (int) $log->log_id
+            (int) $log->log_id,
+            $shift
         )) {
             return response()->json([
                 'message' => 'Another entry already exists for this laborer on this phase for that date.',
             ], 422);
         }
 
-        $rate = $assignment->hourly_rate_ovveride !== null
-            ? (float) $assignment->hourly_rate_ovveride
-            : (float) $assignment->hourly_rate;
-
+        $rate = $this->rateForAssignment($assignment);
         $cost = round($regular * $rate + $overtime * $rate * 1.25, 2);
+        $budgetError = $this->budgetViolation(
+            (int) $assignment->project_id,
+            'labor',
+            $cost,
+            (int) $original->project_id === (int) $assignment->project_id
+                ? (int) $log->log_id
+                : null,
+        );
 
-        DB::transaction(function () use ($log, $assignment, $original, $data, $regular, $overtime, $cost) {
-            // Refund the old charge, then charge the corrected one.
-            $this->adjustProjectBudget((int) $original->project_id, (float) $log->computed_cost);
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
 
+        DB::transaction(function () use ($log, $assignment, $data, $shift, $timeIn, $timeOut, $regular, $overtime, $rate) {
             $log->update([
                 'assignment_id' => $assignment->assignment_id,
                 'log_date' => $data['log_date'],
+                'shift' => $shift,
+                'time_in' => $timeIn,
+                'time_out' => $timeOut,
                 'regular_hours' => $regular,
                 'overtime_hours' => $overtime,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => $rate,
             ]);
-
-            $this->adjustProjectBudget((int) $assignment->project_id, -$cost);
         });
 
         return response()->json([
@@ -1287,11 +1655,8 @@ class SsController extends Controller
             return response()->json(['message' => 'You can only void logs from your own site.'], 403);
         }
 
-        DB::transaction(function () use ($log, $assignment) {
-            $refund = (float) $log->computed_cost;
-
+        DB::transaction(function () use ($log) {
             $log->delete();
-            $this->adjustProjectBudget((int) $assignment->project_id, $refund);
         });
 
         return response()->json(['message' => 'Labor log voided and the budget refunded.']);
@@ -1326,21 +1691,42 @@ class SsController extends Controller
             ], 422);
         }
 
-        $cost = round($quantity * (float) $material->unit_cost, 2);
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'materials',
+            round($quantity * (float) $material->unit_cost, 2),
+        );
 
-        $usageId = DB::transaction(function () use ($data, $quantity, $cost, $phase, $material, $request) {
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
+
+        $usageId = DB::transaction(function () use ($data, $quantity, $phase, $material, $request) {
+            $lockedMaterial = Material::query()->lockForUpdate()->find($material->material_id);
+
+            if (! $lockedMaterial) {
+                throw ValidationException::withMessages([
+                    'material_id' => 'Unknown material.',
+                ]);
+            }
+
+            if ($quantity > (float) $lockedMaterial->stock_quantity) {
+                throw ValidationException::withMessages([
+                    'quantity_used' => 'Only '.$this->stockLabel($lockedMaterial).' of '.$lockedMaterial->material_name.' remain in stock.',
+                ]);
+            }
+
             $usage = MaterialUsage::create([
-                'material_id' => $material->material_id,
+                'material_id' => $lockedMaterial->material_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'quantity_used' => $quantity,
-                'computed_cost' => $cost,
+                'unit_cost_at_use' => (float) $lockedMaterial->unit_cost,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
 
-            $this->adjustMaterialStock((int) $material->material_id, -$quantity);
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
+            $this->adjustMaterialStock((int) $lockedMaterial->material_id, -$quantity);
 
             return $usage->material_usage_id;
         });
@@ -1404,23 +1790,32 @@ class SsController extends Controller
             ], 422);
         }
 
-        $cost = round($quantity * (float) $material->unit_cost, 2);
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'materials',
+            round($quantity * (float) $material->unit_cost, 2),
+            (int) $originalPhase->project_id === (int) $phase->project_id
+                ? (int) $usage->material_usage_id
+                : null,
+        );
 
-        DB::transaction(function () use ($usage, $originalPhase, $phase, $materialId, $data, $quantity, $cost) {
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
+
+        DB::transaction(function () use ($usage, $phase, $materialId, $material, $data, $quantity) {
             // Put the previous entry back, then apply the corrected one.
             $this->adjustMaterialStock((int) $usage->material_id, (float) $usage->quantity_used);
-            $this->adjustProjectBudget((int) $originalPhase->project_id, (float) $usage->computed_cost);
 
             $usage->update([
                 'material_id' => $materialId,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'quantity_used' => $quantity,
-                'computed_cost' => $cost,
+                'unit_cost_at_use' => (float) $material->unit_cost,
             ]);
 
             $this->adjustMaterialStock($materialId, -$quantity);
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
         });
 
         return response()->json([
@@ -1451,12 +1846,10 @@ class SsController extends Controller
             return response()->json(['message' => 'You can only void logs from your own site.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
+        DB::transaction(function () use ($usage) {
             $this->adjustMaterialStock((int) $usage->material_id, (float) $usage->quantity_used);
-            $refund = (float) $usage->computed_cost;
 
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json([
@@ -1486,21 +1879,33 @@ class SsController extends Controller
             return response()->json(['message' => 'Unknown equipment.'], 422);
         }
 
-        $hours = round((float) $data['hours_used'], 2);
-        $cost = round($hours * (float) $equipment->hourly_rental_rate, 2);
+        if ($equipment->equipment_status === 'Under Maintenance') {
+            return response()->json([
+                'message' => 'This equipment is under maintenance and cannot be used.',
+            ], 422);
+        }
 
-        $usageId = DB::transaction(function () use ($data, $hours, $cost, $phase, $equipment, $request) {
+        $hours = round((float) $data['hours_used'], 2);
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'equipment',
+            round($hours * (float) $equipment->hourly_rental_rate, 2),
+        );
+
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
+
+        $usageId = DB::transaction(function () use ($data, $hours, $phase, $equipment, $request) {
             $usage = EquipmentUsage::create([
                 'equipment_id' => $equipment->equipment_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'hours_used' => $hours,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => (float) $equipment->hourly_rental_rate,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
-
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
 
             return $usage->equipment_usage_id;
         });
@@ -1555,21 +1960,34 @@ class SsController extends Controller
             return response()->json(['message' => 'Unknown equipment.'], 422);
         }
 
+        if ($equipment->equipment_status === 'Under Maintenance') {
+            return response()->json([
+                'message' => 'This equipment is under maintenance and cannot be used.',
+            ], 422);
+        }
+
         $hours = round((float) $data['hours_used'], 2);
-        $cost = round($hours * (float) $equipment->hourly_rental_rate, 2);
+        $budgetError = $this->budgetViolation(
+            (int) $phase->project_id,
+            'equipment',
+            round($hours * (float) $equipment->hourly_rental_rate, 2),
+            (int) $originalPhase->project_id === (int) $phase->project_id
+                ? (int) $usage->equipment_usage_id
+                : null,
+        );
 
-        DB::transaction(function () use ($usage, $originalPhase, $phase, $equipmentId, $data, $hours, $cost) {
-            $this->adjustProjectBudget((int) $originalPhase->project_id, (float) $usage->computed_cost);
+        if ($budgetError !== null) {
+            return response()->json(['message' => $budgetError], 422);
+        }
 
+        DB::transaction(function () use ($usage, $phase, $equipmentId, $equipment, $data, $hours) {
             $usage->update([
                 'equipment_id' => $equipmentId,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'hours_used' => $hours,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => (float) $equipment->hourly_rental_rate,
             ]);
-
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
         });
 
         return response()->json([
@@ -1599,11 +2017,8 @@ class SsController extends Controller
             return response()->json(['message' => 'You can only void logs from your own site.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
-            $refund = (float) $usage->computed_cost;
-
+        DB::transaction(function () use ($usage) {
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json(['message' => 'Equipment log voided and the budget refunded.']);

@@ -49,6 +49,9 @@ export default function ProjectsPage() {
           : "-",
     },
     { key: "budget", label: "Approved Budget", render: (row) => money(row.approved_budget) },
+    { key: "spent", label: "Spent", render: (row) => money(row.spent_budget) },
+    { key: "remaining", label: "Remaining", render: (row) => money(row.remaining_budget) },
+    { key: "utilization", label: "Utilization", render: (row) => `${row.utilization ?? 0}%` },
     {
       key: "status",
       label: "Status",

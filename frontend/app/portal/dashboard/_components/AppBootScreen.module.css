@@ -1,0 +1,55 @@
+.shell {
+  width: 100%;
+  height: 100dvh;
+  background: #ffffff;
+}
+
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  background: #0a1440;
+  border-bottom: 1px solid #1e3a8a;
+}
+
+.logo {
+  height: 34px;
+  width: auto;
+}
+
+.sidebar {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  width: 240px;
+  height: calc(100dvh - 64px);
+  background: #0a1440;
+  border-right: 1px solid #1e3a8a;
+}
+
+.main {
+  position: fixed;
+  top: 64px;
+  left: 240px;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    display: none;
+  }
+
+  .main {
+    left: 0;
+  }
+}

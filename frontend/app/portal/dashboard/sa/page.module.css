@@ -596,3 +596,21 @@
     flex: 1;
   }
 }
+
+/* Sortable column header button. */.sortButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.sortButton:hover {
+  color: #a16207;
+}
+

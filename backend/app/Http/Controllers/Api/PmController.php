@@ -12,13 +12,22 @@ use App\Models\MaterialUsage;
 use App\Models\WorkforceAssignment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PmController extends Controller
 {
     /** Statuses a Project Manager may set on their own projects. */
     private const PROJECT_STATUSES = ['Not Started', 'On Track', 'Delayed', 'On Hold', 'Completed'];
+    private const PROJECT_TRANSITIONS = [
+        'Not Started' => ['On Track'],
+        'On Track' => ['Delayed', 'On Hold', 'Completed'],
+        'Delayed' => ['On Track', 'On Hold', 'Completed'],
+        'On Hold' => ['On Track', 'Delayed', 'Completed'],
+        'Completed' => [],
+    ];
     /**
      * Project ids visible to the current user (all for Admin, own for Project Manager).
      *
@@ -42,23 +51,6 @@ class PmController extends Controller
             ->whereIn('project_id', $ids)
             ->where('phase_id', $phaseId)
             ->first();
-    }
-
-    /**
-     * Move a project's remaining budget (negative = spend, positive = refund)
-     * through the Project model so the change is audited.
-     */
-    private function adjustProjectBudget(int $projectId, float $amount): void
-    {
-        $project = Project::query()->lockForUpdate()->find($projectId);
-
-        if (! $project) {
-            return;
-        }
-
-        $project->update([
-            'remaining_budget' => round((float) $project->remaining_budget + $amount, 2),
-        ]);
     }
 
     /**
@@ -225,6 +217,8 @@ class PmController extends Controller
                 'p.deadline',
                 'p.status',
                 'p.approved_budget',
+                'p.materials_budget',
+                'p.equipment_budget',
                 'p.remaining_budget',
                 'u.id_number as manager_id',
                 'u.first_name as manager_first_name',
@@ -235,7 +229,7 @@ class PmController extends Controller
                 'ss.last_name as supervisor_last_name',
                 DB::raw('(SELECT COUNT(*) FROM project_phases ph WHERE ph.project_id = p.project_id) as phase_count'),
                 DB::raw('(SELECT COUNT(*) FROM project_phases ph2 WHERE ph2.project_id = p.project_id AND ph2.status = "Completed") as completed_phases'),
-                DB::raw('(SELECT COUNT(DISTINCT wa.laborer_id) FROM workforce_assignment wa JOIN project_phases ph3 ON ph3.phase_id = wa.phase_id WHERE ph3.project_id = p.project_id) as worker_count')
+                DB::raw('(SELECT COUNT(DISTINCT wa.laborer_id) FROM workforce_assignment wa JOIN project_phases ph3 ON ph3.phase_id = wa.phase_id WHERE ph3.project_id = p.project_id AND wa.status = "Active") as worker_count')
             )
             ->orderBy('p.project_id')
             ->get()
@@ -257,6 +251,8 @@ class PmController extends Controller
                     'deadline' => $row->deadline,
                     'status' => $row->status,
                     'approved_budget' => $approved,
+                    'materials_budget' => round((float) $row->materials_budget, 2),
+                    'equipment_budget' => round((float) $row->equipment_budget, 2),
                     'remaining_budget' => $remaining,
                     'spent_budget' => round($spent, 2),
                     'utilization' => $approved > 0 ? (int) round(($spent / $approved) * 100) : 0,
@@ -337,9 +333,12 @@ class PmController extends Controller
                 'ph.description',
                 'ph.sequence_no',
                 'ph.project_cost',
+                'ph.materials_budget',
+                'ph.equipment_budget',
                 'ph.planned_start',
                 'ph.planned_end',
                 'ph.status',
+                'ph.completion_requested_at',
                 'ph.required_skill_id',
                 's.skill_name as required_skill'
             )
@@ -354,9 +353,12 @@ class PmController extends Controller
                 'description' => $row->description,
                 'sequence_no' => $row->sequence_no,
                 'project_cost' => (float) $row->project_cost,
+                'materials_budget' => (float) $row->materials_budget,
+                'equipment_budget' => (float) $row->equipment_budget,
                 'planned_start' => $row->planned_start,
                 'planned_end' => $row->planned_end,
                 'status' => $row->status,
+                'completion_requested_at' => $row->completion_requested_at,
                 'required_skill_id' => $row->required_skill_id,
                 'required_skill' => $row->required_skill,
             ]);
@@ -370,7 +372,18 @@ class PmController extends Controller
     public function storeProject(Request $request): JsonResponse
     {
         $data = $this->validateProject($request, true);
+        $this->assertProjectDates($data);
+
         $userId = $request->user()->user_id;
+        $approved = (float) ($data['approved_budget'] ?? 0);
+        $materials = array_key_exists('materials_budget', $data) && $data['materials_budget'] !== null
+            ? (float) $data['materials_budget']
+            : round($approved * 0.50, 2);
+        $equipment = array_key_exists('equipment_budget', $data) && $data['equipment_budget'] !== null
+            ? (float) $data['equipment_budget']
+            : round($approved * 0.15, 2);
+
+        $this->assertAllocations($approved, $materials, $equipment);
 
         $project = Project::create([
             'project_name' => $data['project_name'],
@@ -378,11 +391,14 @@ class PmController extends Controller
             'location' => $data['location'] ?? null,
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
-            'deadline' => $data['deadline'] ?? null,
-            'approved_budget' => $data['approved_budget'] ?? 0,
+            'approved_budget' => round($approved, 2),
+            // Allocations come from the PM form; the split above only applies
+            // when the request omits them.
+            'materials_budget' => round($materials, 2),
+            'equipment_budget' => round($equipment, 2),
             // A brand-new project has spent nothing yet.
-            'remaining_budget' => $data['approved_budget'] ?? 0,
-            'status' => $data['status'] ?? 'On Track',
+            'remaining_budget' => $approved,
+            'status' => 'Not Started',
             // Ownership is always the PM creating it.
             'user_id' => $userId,
             'created_by' => $userId,
@@ -408,6 +424,29 @@ class PmController extends Controller
         }
 
         $data = $this->validateProject($request);
+        $this->assertProjectDates($data, $project);
+
+        $currentApproved = (float) $project->approved_budget;
+        $approved = array_key_exists('approved_budget', $data) && $data['approved_budget'] !== null
+            ? (float) $data['approved_budget']
+            : $currentApproved;
+        $materials = array_key_exists('materials_budget', $data) && $data['materials_budget'] !== null
+            ? (float) $data['materials_budget']
+            : (float) $project->materials_budget;
+        $equipment = array_key_exists('equipment_budget', $data) && $data['equipment_budget'] !== null
+            ? (float) $data['equipment_budget']
+            : (float) $project->equipment_budget;
+
+        $this->assertAllocations($approved, $materials, $equipment);
+
+        // Spend already posted against the project must survive a budget edit.
+        $spent = max(0.0, round($currentApproved - (float) $project->remaining_budget, 2));
+
+        if (round($approved, 2) < round($spent, 2)) {
+            throw ValidationException::withMessages([
+                'approved_budget' => ['Invalid: The set budget is below the amount already spent.'],
+            ]);
+        }
 
         $project->update([
             'project_name' => $data['project_name'],
@@ -415,9 +454,11 @@ class PmController extends Controller
             'location' => $data['location'] ?? null,
             'start_date' => $data['start_date'] ?? null,
             'end_date' => $data['end_date'] ?? null,
-            'deadline' => $data['deadline'] ?? null,
-            'status' => $data['status'] ?? $project->status,
             'site_supervisor_id' => $data['site_supervisor_id'] ?? $project->site_supervisor_id,
+            'approved_budget' => round($approved, 2),
+            'materials_budget' => round($materials, 2),
+            'equipment_budget' => round($equipment, 2),
+            'remaining_budget' => round(max(0.0, $approved - $spent), 2),
             'updated_by' => $request->user()->user_id,
         ]);
 
@@ -428,8 +469,249 @@ class PmController extends Controller
     }
 
     /**
-     * @return array<string, mixed>
+     * Move one of the PM's projects through its status flow.
      */
+    public function changeProjectStatus(Request $request, Project $project): JsonResponse
+    {
+        if ((int) $project->user_id !== (int) $request->user()->user_id) {
+            return response()->json([
+                'message' => 'You can only change projects assigned to you.',
+            ], 403);
+        }
+
+        $data = $request->validate([
+            'status' => ['required', Rule::in(self::PROJECT_STATUSES)],
+        ]);
+
+        $current = $project->status ?? 'Not Started';
+        $allowed = self::PROJECT_TRANSITIONS[$current] ?? [];
+
+        if (! in_array($data['status'], $allowed, true)) {
+            return response()->json([
+                'message' => 'Project status cannot move from '.$current.' to '.$data['status'].'.',
+            ], 422);
+        }
+
+        $project->update([
+            'status' => $data['status'],
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Project moved to '.$data['status'].'.',
+            'data' => $project->fresh(),
+        ]);
+    }
+
+    /**
+     * Move a Not Started phase into In Progress.
+     */
+    public function startPhase(Request $request, int $phase): JsonResponse
+    {
+        $row = $this->phaseFor($this->projectIds($request), $phase);
+
+        if (! $row) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        if ($row->status !== 'Not Started') {
+            return response()->json([
+                'message' => 'Only a Not Started phase can be started.',
+            ], 422);
+        }
+
+        $model = ProjectPhase::findOrFail($phase);
+        $model->update([
+            'status' => 'In Progress',
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Phase started.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    /**
+     * Approve a pending supervisor completion request.
+     */
+    public function approvePhaseCompletion(Request $request, int $phase): JsonResponse
+    {
+        $row = $this->phaseFor($this->projectIds($request), $phase);
+
+        if (! $row) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        if ($row->status !== 'In Progress') {
+            return response()->json([
+                'message' => 'Only an In Progress phase can be completed.',
+            ], 422);
+        }
+
+        if (! $row->completion_requested_at) {
+            return response()->json([
+                'message' => 'The Site Supervisor has not requested completion for this phase.',
+            ], 422);
+        }
+
+        $totalTasks = DB::table('site_task')->where('phase_id', $phase)->count();
+        $openTasks = DB::table('site_task')
+            ->where('phase_id', $phase)
+            ->where('status', '!=', 'Done')
+            ->count();
+
+        if ($totalTasks === 0) {
+            return response()->json([
+                'message' => 'Add at least one task before approving completion.',
+            ], 422);
+        }
+
+        if ($openTasks > 0) {
+            return response()->json([
+                'message' => 'Complete all phase tasks before approving completion.',
+            ], 422);
+        }
+
+        $model = ProjectPhase::findOrFail($phase);
+        $model->update([
+            'status' => 'Completed',
+            'completion_requested_at' => null,
+            'completion_requested_by' => null,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Phase completed.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    /**
+     * Reject a pending supervisor completion request without completing the phase.
+     */
+    public function rejectPhaseCompletion(Request $request, int $phase): JsonResponse
+    {
+        $row = $this->phaseFor($this->projectIds($request), $phase);
+
+        if (! $row) {
+            return response()->json(['message' => 'Phase not found.'], 404);
+        }
+
+        if ($row->status !== 'In Progress' || ! $row->completion_requested_at) {
+            return response()->json([
+                'message' => 'There is no pending completion request for this phase.',
+            ], 422);
+        }
+
+        $model = ProjectPhase::findOrFail($phase);
+        $model->update([
+            'completion_requested_at' => null,
+            'completion_requested_by' => null,
+            'updated_by' => $request->user()->user_id,
+        ]);
+
+        return response()->json([
+            'message' => 'Completion request rejected.',
+            'data' => $model->fresh(),
+        ]);
+    }
+
+    /**
+     * Resource allocations can never exceed the total approved budget.
+     */
+    private function assertAllocations(float $approved, float $materials, float $equipment): void
+    {
+        if (round($materials + $equipment, 2) > round($approved, 2)) {
+            throw ValidationException::withMessages([
+                'materials_budget' => ['Invalid: The set budget exceeds the allocated budget limit.'],
+            ]);
+        }
+    }
+
+    /**
+     * Phase budgets cannot collectively exceed the project's allocations.
+     */
+    private function assertPhaseAllocations(
+        Project $project,
+        array $data,
+        ?ProjectPhase $phase = null,
+    ): void {
+        $otherPhases = DB::table('project_phases')
+            ->where('project_id', $project->project_id)
+            ->when($phase, fn ($query) => $query->where('phase_id', '!=', $phase->phase_id))
+            ->selectRaw(
+                'COALESCE(SUM(project_cost), 0) as cost, '
+                .'COALESCE(SUM(materials_budget), 0) as materials, '
+                .'COALESCE(SUM(equipment_budget), 0) as equipment'
+            )
+            ->first();
+
+        $cost = array_key_exists('project_cost', $data)
+            ? (float) ($data['project_cost'] ?? 0)
+            : (float) ($phase?->project_cost ?? 0);
+        $materials = array_key_exists('materials_budget', $data)
+            ? (float) ($data['materials_budget'] ?? 0)
+            : (float) ($phase?->materials_budget ?? 0);
+        $equipment = array_key_exists('equipment_budget', $data)
+            ? (float) ($data['equipment_budget'] ?? 0)
+            : (float) ($phase?->equipment_budget ?? 0);
+
+        if (
+            round((float) $otherPhases->cost + $cost, 2) > round((float) $project->approved_budget, 2)
+            || round((float) $otherPhases->materials + $materials, 2) > round((float) $project->materials_budget, 2)
+            || round((float) $otherPhases->equipment + $equipment, 2) > round((float) $project->equipment_budget, 2)
+        ) {
+            throw ValidationException::withMessages([
+                'project_cost' => ['Invalid: The set budget exceeds the allocated budget limit.'],
+            ]);
+        }
+    }
+
+    private function assertProjectDates(array $data, ?Project $project = null): void
+    {
+        $start = array_key_exists('start_date', $data)
+            ? $data['start_date']
+            : $project?->start_date;
+        $end = array_key_exists('end_date', $data)
+            ? $data['end_date']
+            : $project?->end_date;
+
+        if ($start && $end && Carbon::parse($end)->lt(Carbon::parse($start))) {
+            throw ValidationException::withMessages([
+                'end_date' => ['Target end date cannot be before the start date.'],
+            ]);
+        }
+    }
+
+    private function assertPhaseDates(array $data, Project $project, ?ProjectPhase $phase = null): void
+    {
+        $start = array_key_exists('planned_start', $data)
+            ? $data['planned_start']
+            : $phase?->planned_start;
+        $end = array_key_exists('planned_end', $data)
+            ? $data['planned_end']
+            : $phase?->planned_end;
+
+        if ($start && $end && Carbon::parse($end)->lt(Carbon::parse($start))) {
+            throw ValidationException::withMessages([
+                'planned_end' => ['Planned end date cannot be before the planned start date.'],
+            ]);
+        }
+
+        if ($start && $project->start_date && Carbon::parse($start)->lt($project->start_date)) {
+            throw ValidationException::withMessages([
+                'planned_start' => ['Planned start date cannot be before the project start date.'],
+            ]);
+        }
+
+        if ($end && $project->end_date && Carbon::parse($end)->gt($project->end_date)) {
+            throw ValidationException::withMessages([
+                'planned_end' => ['Planned end date cannot be after the project end date.'],
+            ]);
+        }
+    }
+
     private function validateProject(Request $request, bool $supervisorRequired = false): array
     {
         $supervisorRoleId = DB::table('role')
@@ -446,9 +728,9 @@ class PmController extends Controller
             'location' => ['nullable', 'string', 'max:255'],
             'start_date' => ['nullable', 'date'],
             'end_date' => ['nullable', 'date'],
-            'deadline' => ['nullable', 'date'],
             'approved_budget' => ['nullable', 'numeric', 'min:0'],
-            'status' => ['nullable', Rule::in(self::PROJECT_STATUSES)],
+            'materials_budget' => ['nullable', 'numeric', 'min:0'],
+            'equipment_budget' => ['nullable', 'numeric', 'min:0'],
             // A project cannot reach the site without a supervisor.
             'site_supervisor_id' => $supervisorRequired
                 ? ['required', 'integer', $supervisorRule]
@@ -473,6 +755,10 @@ class PmController extends Controller
             return response()->json(['message' => 'You cannot add phases to that project.'], 403);
         }
 
+        $project = Project::findOrFail($projectId);
+        $this->assertPhaseDates($data, $project);
+        $this->assertPhaseAllocations($project, $data);
+
         // Eloquent (not the query builder) so the audit observer fires.
         $phase = ProjectPhase::create([
             'project_id' => $projectId,
@@ -480,9 +766,11 @@ class PmController extends Controller
             'description' => $data['description'] ?? null,
             'sequence_no' => $data['sequence_no'] ?? null,
             'project_cost' => $data['project_cost'] ?? null,
+            'materials_budget' => $data['materials_budget'] ?? 0,
+            'equipment_budget' => $data['equipment_budget'] ?? 0,
             'planned_start' => $data['planned_start'] ?? null,
             'planned_end' => $data['planned_end'] ?? null,
-            'status' => $data['status'] ?? 'Not Started',
+            'status' => 'Not Started',
             'required_skill_id' => $data['required_skill_id'] ?? null,
             'created_by' => $request->user()->user_id,
             'updated_by' => $request->user()->user_id,
@@ -545,16 +833,36 @@ class PmController extends Controller
             ->whereIn('project_id', $ids)
             ->where('status', '!=', 'Completed')
             ->count();
-    }    public function workforce(Request $request): JsonResponse
+    }
+
+    /**
+     * Workers for the selected project. "Available" means not actively
+     * assigned to this project; a laborer may still work on another project.
+     */
+    public function workforce(Request $request): JsonResponse
     {
+        $selected = (int) $request->query('project_id', 0);
+
+        if ($selected > 0 && ! in_array($selected, $this->allowedProjectIds($request), true)) {
+            return response()->json([
+                'message' => 'Project not found.',
+            ], 403);
+        }
+
         $ids = $this->projectIds($request);
 
         $available = DB::table('laborer as l')
-            ->leftJoin('workforce_assignment as wa', function ($join) {
-                $join->on('wa.laborer_id', '=', 'l.laborer_id')->where('wa.status', '=', 'Active');
-            })
-            ->whereNull('wa.assignment_id')
             ->where('l.employment_status', 'Active')
+            ->when($ids !== [], function ($query) use ($ids) {
+                $query->whereNotExists(function ($sub) use ($ids) {
+                    $sub->select(DB::raw(1))
+                        ->from('workforce_assignment as wa')
+                        ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+                        ->whereColumn('wa.laborer_id', 'l.laborer_id')
+                        ->where('wa.status', 'Active')
+                        ->whereIn('ph.project_id', $ids);
+                });
+            })
             ->select('l.laborer_id', 'l.first_name', 'l.last_name', 'l.hourly_rate', 'l.employment_status')
             ->orderBy('l.last_name')
             ->get();
@@ -567,10 +875,13 @@ class PmController extends Controller
             ->where('wa.status', 'Active')
             ->select(
                 'wa.assignment_id',
+                'wa.phase_id',
                 'l.laborer_id',
                 'l.first_name',
                 'l.last_name',
                 'l.hourly_rate',
+                'l.employment_status',
+                'wa.hourly_rate_ovveride',
                 'p.project_name as project',
                 'ph.project_name as phase',
                 'wa.role_on_task',
@@ -613,6 +924,14 @@ class PmController extends Controller
             ->join('laborer_skills as ls', 'ls.laborer_id', '=', 'l.laborer_id')
             ->where('ls.skill_id', $phase->required_skill_id)
             ->where('l.employment_status', 'Active')
+            ->whereNotExists(function ($sub) use ($phase) {
+                $sub->select(DB::raw(1))
+                    ->from('workforce_assignment as wa')
+                    ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+                    ->whereColumn('wa.laborer_id', 'l.laborer_id')
+                    ->where('wa.status', 'Active')
+                    ->where('ph.project_id', $phase->project_id);
+            })
             ->select('l.laborer_id', 'l.first_name', 'l.last_name', 'l.hourly_rate', 'l.employment_status')
             ->distinct()
             ->orderBy('l.last_name')
@@ -640,23 +959,30 @@ class PmController extends Controller
     }
 
     /**
-     * Active Site Supervisors a PM can assign to their projects.
+     * Site Supervisors a PM can assign to projects, plus the directory view.
+     * Defaults to active accounts; `include_inactive=1` returns the full list.
      */
-    public function siteSupervisors(): JsonResponse
+    public function siteSupervisors(Request $request): JsonResponse
     {
         $roleId = DB::table('role')
             ->where('role_name', Role::SITE_SUPERVISOR)
             ->value('role_id');
 
-        $rows = DB::table('users')
-            ->where('role_id', $roleId)
-            ->where('is_active', true)
+        $query = DB::table('users')->where('role_id', $roleId);
+
+        if (! $request->boolean('include_inactive')) {
+            $query->where('is_active', true);
+        }
+
+        $rows = $query
             ->orderBy('last_name')
-            ->get(['user_id', 'id_number', 'first_name', 'last_name'])
+            ->get(['user_id', 'id_number', 'first_name', 'last_name', 'email', 'is_active'])
             ->map(fn ($user) => [
                 'user_id' => (int) $user->user_id,
                 'id_number' => $user->id_number,
                 'name' => trim(($user->first_name ?? '').' '.($user->last_name ?? '')),
+                'email' => $user->email,
+                'is_active' => (bool) $user->is_active,
             ]);
 
         return response()->json(['data' => $rows]);
@@ -671,6 +997,7 @@ class PmController extends Controller
             'laborer_id' => ['required', 'integer', Rule::exists('laborer', 'laborer_id')],
             'phase_id' => ['required', 'integer', Rule::exists('project_phases', 'phase_id')],
             'role_on_task' => ['nullable', 'string', 'max:100'],
+            'hourly_rate_ovveride' => ['nullable', 'numeric', 'gt:0', 'max:9999999999999.99'],
         ]);
 
         $phase = DB::table('project_phases')->where('phase_id', $data['phase_id'])->first();
@@ -681,16 +1008,25 @@ class PmController extends Controller
             ], 403);
         }
 
-        $duplicate = DB::table('workforce_assignment')
-            ->where('laborer_id', $data['laborer_id'])
-            ->where('phase_id', $data['phase_id'])
-            ->where('status', 'Active')
+        $laborer = DB::table('laborer')->where('laborer_id', $data['laborer_id'])->first();
+
+        if (! $laborer || $laborer->employment_status !== 'Active') {
+            throw ValidationException::withMessages([
+                'laborer_id' => 'Only active laborers can be assigned to a phase.',
+            ]);
+        }
+
+        $duplicate = DB::table('workforce_assignment as wa')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'wa.phase_id')
+            ->where('wa.laborer_id', $data['laborer_id'])
+            ->where('ph.project_id', $phase->project_id)
+            ->where('wa.status', 'Active')
             ->exists();
 
         if ($duplicate) {
-            return response()->json([
-                'message' => 'That laborer is already assigned to this phase.',
-            ], 422);
+            throw ValidationException::withMessages([
+                'phase_id' => 'This laborer is already actively assigned to a phase in this project. Remove that assignment before assigning another phase.',
+            ]);
         }
 
         $assignment = WorkforceAssignment::create([
@@ -699,6 +1035,7 @@ class PmController extends Controller
             'assigned_at' => now(),
             'role_on_task' => $data['role_on_task'] ?? null,
             'status' => 'Active',
+            'hourly_rate_ovveride' => $data['hourly_rate_ovveride'] ?? null,
             'created_by' => $request->user()->user_id,
             'updated_by' => $request->user()->user_id,
         ]);
@@ -736,6 +1073,18 @@ class PmController extends Controller
             ], 422);
         }
 
+        $openTasks = DB::table('site_task')
+            ->where('phase_id', $row->phase_id)
+            ->where('assigned_laborer_id', $row->laborer_id)
+            ->whereIn('status', ['Pending', 'In Progress'])
+            ->count();
+
+        if ($openTasks > 0) {
+            return response()->json([
+                'message' => 'This laborer has open tasks on this phase. Reassign or complete those tasks before removing the assignment.',
+            ], 422);
+        }
+
         WorkforceAssignment::whereKey($assignment)->delete();
 
         return response()->json(['message' => 'Laborer removed from the phase.']);
@@ -756,16 +1105,36 @@ class PmController extends Controller
 
         $data = $this->validatePhase($request);
         $model = ProjectPhase::findOrFail($phase);
+        $project = Project::findOrFail($model->project_id);
+        $this->assertPhaseDates($data, $project, $model);
+        $this->assertPhaseAllocations($project, $data, $model);
 
         $model->update([
             'project_name' => $data['phase_name'],
-            'description' => $data['description'] ?? null,
-            'sequence_no' => $data['sequence_no'] ?? null,
-            'project_cost' => $data['project_cost'] ?? null,
-            'planned_start' => $data['planned_start'] ?? null,
-            'planned_end' => $data['planned_end'] ?? null,
-            'status' => $data['status'] ?? $model->status,
-            'required_skill_id' => $data['required_skill_id'] ?? null,
+            'description' => array_key_exists('description', $data)
+                ? $data['description']
+                : $model->description,
+            'sequence_no' => array_key_exists('sequence_no', $data)
+                ? $data['sequence_no']
+                : $model->sequence_no,
+            'project_cost' => array_key_exists('project_cost', $data)
+                ? $data['project_cost']
+                : $model->project_cost,
+            'materials_budget' => array_key_exists('materials_budget', $data)
+                ? ($data['materials_budget'] ?? 0)
+                : $model->materials_budget,
+            'equipment_budget' => array_key_exists('equipment_budget', $data)
+                ? ($data['equipment_budget'] ?? 0)
+                : $model->equipment_budget,
+            'planned_start' => array_key_exists('planned_start', $data)
+                ? $data['planned_start']
+                : $model->planned_start,
+            'planned_end' => array_key_exists('planned_end', $data)
+                ? $data['planned_end']
+                : $model->planned_end,
+            'required_skill_id' => array_key_exists('required_skill_id', $data)
+                ? $data['required_skill_id']
+                : $model->required_skill_id,
             'updated_by' => $request->user()->user_id,
         ]);
 
@@ -788,11 +1157,42 @@ class PmController extends Controller
             ], 403);
         }
 
+        if ($row->status !== 'Not Started') {
+            return response()->json([
+                'message' => 'Only a Not Started phase can be deleted.',
+            ], 422);
+        }
+
+        if ($row->completion_requested_at) {
+            return response()->json([
+                'message' => 'This phase has a pending completion request and cannot be deleted.',
+            ], 422);
+        }
+
         $assignments = DB::table('workforce_assignment')->where('phase_id', $phase)->count();
 
         if ($assignments > 0) {
             return response()->json([
                 'message' => 'This phase still has laborers assigned and cannot be deleted.',
+            ], 422);
+        }
+
+        $tasks = DB::table('site_task')->where('phase_id', $phase)->count();
+
+        if ($tasks > 0) {
+            return response()->json([
+                'message' => 'This phase has site tasks and cannot be deleted.',
+            ], 422);
+        }
+
+        $laborLogs = DB::table('labor_hour_log as lhl')
+            ->join('workforce_assignment as wa', 'wa.assignment_id', '=', 'lhl.assignment_id')
+            ->where('wa.phase_id', $phase)
+            ->count();
+
+        if ($laborLogs > 0) {
+            return response()->json([
+                'message' => 'This phase has labor-hour history and cannot be deleted.',
             ], 422);
         }
 
@@ -820,9 +1220,10 @@ class PmController extends Controller
             'description' => ['nullable', 'string', 'max:255'],
             'sequence_no' => ['nullable', 'integer', 'min:1'],
             'project_cost' => ['nullable', 'numeric', 'min:0'],
+            'materials_budget' => ['nullable', 'numeric', 'min:0'],
+            'equipment_budget' => ['nullable', 'numeric', 'min:0'],
             'planned_start' => ['nullable', 'date'],
             'planned_end' => ['nullable', 'date'],
-            'status' => ['nullable', Rule::in(['Not Started', 'In Progress', 'Completed'])],
             'required_skill_id' => ['nullable', 'integer', Rule::exists('skill', 'skill_id')],
         ]);
     }
@@ -905,21 +1306,32 @@ class PmController extends Controller
             ], 422);
         }
 
-        $cost = round($quantity * (float) $material->unit_cost, 2);
+        DB::transaction(function () use ($data, $quantity, $phase, $material, $request) {
+            $lockedMaterial = Material::query()->lockForUpdate()->find($material->material_id);
 
-        DB::transaction(function () use ($data, $quantity, $cost, $phase, $material, $request) {
+            if (! $lockedMaterial) {
+                throw ValidationException::withMessages([
+                    'material_id' => 'Unknown material.',
+                ]);
+            }
+
+            if ($quantity > (float) $lockedMaterial->stock_quantity) {
+                throw ValidationException::withMessages([
+                    'quantity_used' => 'Only '.$this->stockLabel($lockedMaterial).' of '.$lockedMaterial->material_name.' remain in stock.',
+                ]);
+            }
+
             MaterialUsage::create([
-                'material_id' => $material->material_id,
+                'material_id' => $lockedMaterial->material_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'quantity_used' => $quantity,
-                'computed_cost' => $cost,
+                'unit_cost_at_use' => (float) $lockedMaterial->unit_cost,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
 
-            $this->adjustMaterialStock((int) $material->material_id, -$quantity);
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
+            $this->adjustMaterialStock((int) $lockedMaterial->material_id, -$quantity);
         });
 
         return response()->json([
@@ -949,12 +1361,10 @@ class PmController extends Controller
             return response()->json(['message' => 'You can only void logs from your own project.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
+        DB::transaction(function () use ($usage) {
             $this->adjustMaterialStock((int) $usage->material_id, (float) $usage->quantity_used);
-            $refund = (float) $usage->computed_cost;
 
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json(['message' => 'Material log voided, stock and budget refunded.']);
@@ -979,18 +1389,14 @@ class PmController extends Controller
         }
 
         $materials = DB::table('materials as m')
-            ->leftJoin('materials_suppliers as ms', 'ms.material_id', '=', 'm.material_id')
-            ->leftJoin('suppliers as s', 's.supplier_id', '=', 'ms.supplier_id')
             ->whereIn('m.material_id', $used->keys()->all())
             ->select(
                 'm.material_id',
                 'm.material_name',
                 'm.unit_of_measure',
                 'm.unit_cost',
-                'm.stock_quantity',
-                DB::raw('MIN(s.supplier_name) as supplier_name')
+                'm.stock_quantity'
             )
-            ->groupBy('m.material_id', 'm.material_name', 'm.unit_of_measure', 'm.unit_cost', 'm.stock_quantity')
             ->orderBy('m.material_name')
             ->get()
             ->map(fn ($row) => [
@@ -999,7 +1405,6 @@ class PmController extends Controller
                 'unit_of_measure' => $row->unit_of_measure,
                 'unit_cost' => (float) $row->unit_cost,
                 'stock_quantity' => (int) $row->stock_quantity,
-                'supplier_name' => $row->supplier_name,
                 'used_quantity' => (float) ($used[$row->material_id] ?? 0),
             ])
             ->values();
@@ -1039,21 +1444,23 @@ class PmController extends Controller
             return response()->json(['message' => 'Unknown equipment.'], 422);
         }
 
-        $hours = round((float) $data['hours_used'], 2);
-        $cost = round($hours * (float) $equipment->hourly_rental_rate, 2);
+        if ($equipment->equipment_status === 'Under Maintenance') {
+            return response()->json([
+                'message' => 'This equipment is under maintenance and cannot be used.',
+            ], 422);
+        }
 
-        DB::transaction(function () use ($data, $hours, $cost, $phase, $equipment, $request) {
+        $hours = round((float) $data['hours_used'], 2);
+        DB::transaction(function () use ($data, $hours, $phase, $equipment, $request) {
             EquipmentUsage::create([
                 'equipment_id' => $equipment->equipment_id,
                 'phase_id' => $phase->phase_id,
                 'usage_date' => $data['usage_date'],
                 'hours_used' => $hours,
-                'computed_cost' => $cost,
+                'hourly_rate_at_use' => (float) $equipment->hourly_rental_rate,
                 'created_by' => $request->user()->user_id,
                 'updated_by' => $request->user()->user_id,
             ]);
-
-            $this->adjustProjectBudget((int) $phase->project_id, -$cost);
         });
 
         return response()->json([
@@ -1082,11 +1489,8 @@ class PmController extends Controller
             return response()->json(['message' => 'You can only void logs from your own project.'], 403);
         }
 
-        DB::transaction(function () use ($usage, $phase) {
-            $refund = (float) $usage->computed_cost;
-
+        DB::transaction(function () use ($usage) {
             $usage->delete();
-            $this->adjustProjectBudget((int) $phase->project_id, $refund);
         });
 
         return response()->json(['message' => 'Equipment log voided and the budget refunded.']);
@@ -1098,8 +1502,6 @@ class PmController extends Controller
     public function equipment(Request $request): JsonResponse
     {
         $ids = $this->projectIds($request);
-        $idList = implode(',', array_map('intval', $ids));
-
         $hours = DB::table('equipment_usage as eu')
             ->join('project_phases as ph', 'ph.phase_id', '=', 'eu.phase_id')
             ->whereIn('ph.project_id', $ids)
@@ -1111,6 +1513,9 @@ class PmController extends Controller
             return response()->json(['data' => []]);
         }
 
+        // Bind the project ids instead of splicing them into the SQL string.
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
         $equipment = DB::table('equipment as e')
             ->whereIn('e.equipment_id', $hours->keys()->all())
             ->select(
@@ -1118,8 +1523,11 @@ class PmController extends Controller
                 'e.equipment_name',
                 'e.equipment_type',
                 'e.hourly_rental_rate',
-                'e.equipment_status',
-                DB::raw('(SELECT p.project_name FROM equipment_usage eu JOIN project_phases ph ON ph.phase_id = eu.phase_id JOIN projects p ON p.project_id = ph.project_id WHERE eu.equipment_id = e.equipment_id AND ph.project_id IN ('.$idList.') ORDER BY eu.usage_date DESC LIMIT 1) as assigned_project')
+                'e.equipment_status'
+            )
+            ->selectRaw(
+                '(SELECT p.project_name FROM equipment_usage eu JOIN project_phases ph ON ph.phase_id = eu.phase_id JOIN projects p ON p.project_id = ph.project_id WHERE eu.equipment_id = e.equipment_id AND ph.project_id IN ('.$placeholders.') ORDER BY eu.usage_date DESC LIMIT 1) as assigned_project',
+                $ids
             )
             ->orderBy('e.equipment_name')
             ->get()
@@ -1150,6 +1558,8 @@ class PmController extends Controller
             ->whereIn('ph.project_id', $ids)
             ->select(
                 'wa.assignment_id',
+                'wa.laborer_id',
+                'ph.phase_id',
                 'l.first_name',
                 'l.last_name',
                 'p.project_name as project',
@@ -1168,15 +1578,52 @@ class PmController extends Controller
 
     public function budgets(Request $request): JsonResponse
     {
+        $ids = $this->projectIds($request);
+
+        // Resource allocations live on the project row; spend is aggregated from
+        // the usage tables so the finance page can show one clean breakdown.
+        $resources = DB::table('projects')
+            ->whereIn('project_id', $ids)
+            ->get(['project_id', 'materials_budget', 'equipment_budget'])
+            ->keyBy('project_id');
+
+        $materialSpend = DB::table('material_usage as mu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'mu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->groupBy('ph.project_id')
+            ->select('ph.project_id', DB::raw('SUM(mu.computed_cost) as spent'))
+            ->pluck('spent', 'project_id');
+
+        $equipmentSpend = DB::table('equipment_usage as eu')
+            ->join('project_phases as ph', 'ph.phase_id', '=', 'eu.phase_id')
+            ->whereIn('ph.project_id', $ids)
+            ->groupBy('ph.project_id')
+            ->select('ph.project_id', DB::raw('SUM(eu.computed_cost) as spent'))
+            ->pluck('spent', 'project_id');
+
         $data = $this->projectsFor($request)
-            ->map(fn ($project) => [
-                'project_id' => $project['project_id'],
-                'project' => $project['project_name'],
-                'approved' => $project['approved_budget'],
-                'spent' => $project['spent_budget'],
-                'remaining' => $project['remaining_budget'],
-                'utilization' => $project['utilization'],
-            ])
+            ->map(function ($project) use ($resources, $materialSpend, $equipmentSpend) {
+                $resource = $resources[$project['project_id']] ?? null;
+                $materialsBudget = round((float) ($resource->materials_budget ?? 0), 2);
+                $materialsSpent = round((float) ($materialSpend[$project['project_id']] ?? 0), 2);
+                $equipmentBudget = round((float) ($resource->equipment_budget ?? 0), 2);
+                $equipmentSpent = round((float) ($equipmentSpend[$project['project_id']] ?? 0), 2);
+
+                return [
+                    'project_id' => $project['project_id'],
+                    'project' => $project['project_name'],
+                    'approved' => $project['approved_budget'],
+                    'spent' => $project['spent_budget'],
+                    'remaining' => $project['remaining_budget'],
+                    'utilization' => $project['utilization'],
+                    'materials_budget' => $materialsBudget,
+                    'materials_spent' => $materialsSpent,
+                    'materials_remaining' => round($materialsBudget - $materialsSpent, 2),
+                    'equipment_budget' => $equipmentBudget,
+                    'equipment_spent' => $equipmentSpent,
+                    'equipment_remaining' => round($equipmentBudget - $equipmentSpent, 2),
+                ];
+            })
             ->values();
 
         return response()->json(['data' => $data]);

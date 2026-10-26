@@ -263,3 +263,13 @@
     padding: 2.5rem 1.5rem;
   }
 }
+
+/* Post-login hand-off: covers the login card until the dashboard boots. */
+.redirectOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+}

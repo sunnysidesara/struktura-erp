@@ -1,26 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import type { PmProject } from "@/lib/api";
-import { ProjectMaster } from "../_components/ProjectMaster";
-import { PhasesDetail } from "./PhasesDetail";
+import { SaPage } from "@/app/portal/dashboard/sa/_components/SaPage";
+import { PmProjectGate } from "../_components/PmProjectGate";
+import { usePmProject } from "../_components/projectSelection";
+import { PhasesPanel } from "./PhasesDetail";
 
 export default function PhasesPage() {
-  const [openProject, setOpenProject] = useState<PmProject | null>(null);
+  const { selected } = usePmProject();
 
   return (
-    <>
-      <ProjectMaster
-        kicker="Project Phases"
-        title="Phases"
-        subtitle="Choose a project to manage its phases and schedule"
-        actionLabel="View Phases"
-        onOpen={setOpenProject}
-      />
-
-      {openProject ? (
-        <PhasesDetail project={openProject} onClose={() => setOpenProject(null)} />
-      ) : null}
-    </>
+    <SaPage
+      kicker="Project Phases"
+      title="Phases"
+      subtitle={
+        selected
+          ? `${selected.code} · ${selected.project_name}`
+          : "Select a project to manage its phases and schedule."
+      }
+    >
+      <PmProjectGate>
+        {() => (selected ? <PhasesPanel project={selected} /> : null)}
+      </PmProjectGate>
+    </SaPage>
   );
 }

@@ -19,6 +19,7 @@ class WorkforceAssignment extends Model
         'assigned_at',
         'role_on_task',
         'status',
+        'hourly_rate_ovveride',
         'released_at',
         'created_by',
         'updated_by',
@@ -32,6 +33,7 @@ class WorkforceAssignment extends Model
         return [
             'assigned_at' => 'datetime',
             'released_at' => 'datetime',
+            'hourly_rate_ovveride' => 'decimal:2',
         ];
     }
 }
