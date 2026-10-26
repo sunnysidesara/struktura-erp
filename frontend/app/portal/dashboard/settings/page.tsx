@@ -96,7 +96,9 @@ function readStoredNotifications(): Record<NotificationKey, boolean> {
 /** Pull the most useful message out of a failed API call. */
 function messageFrom(error: unknown): string {
   if (error instanceof ApiError) {
-    const first = error.errors ? Object.values(error.errors)[0]?.[0] : undefined;
+    const first = error.errors
+      ? Object.values(error.errors)[0]?.[0]
+      : undefined;
     return first ?? error.message;
   }
 
@@ -147,7 +149,9 @@ function ToggleSwitch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      className={checked ? `${styles.switch} ${styles.switchOn}` : styles.switch}
+      className={
+        checked ? `${styles.switch} ${styles.switchOn}` : styles.switch
+      }
       onClick={onChange}
     >
       <span />
@@ -254,12 +258,16 @@ export default function SettingsPage() {
       errors.email = "Enter a valid email address (e.g. name@company.com).";
     }
     if (contact !== "" && !CONTACT_PATTERN.test(contact)) {
-      errors.contact = "Contact number must be numeric (7-15 digits, optional leading +).";
+      errors.contact =
+        "Contact number must be numeric (7-15 digits, optional leading +).";
     }
 
     if (Object.keys(errors).length > 0) {
       setProfileErrors(errors);
-      setProfileStatus({ type: "error", message: "Please fix the highlighted fields." });
+      setProfileStatus({
+        type: "error",
+        message: "Please fix the highlighted fields.",
+      });
       return;
     }
 
@@ -283,7 +291,10 @@ export default function SettingsPage() {
         contact: user.contact_number ?? "",
       });
       persistSessionName(user.first_name, user.last_name, user.email);
-      setProfileStatus({ type: "success", message: "Changes saved successfully." });
+      setProfileStatus({
+        type: "success",
+        message: "Changes saved successfully.",
+      });
     } catch (error) {
       // Map server-side validation errors back onto their inputs.
       if (error instanceof ApiError && error.errors) {
@@ -329,8 +340,8 @@ export default function SettingsPage() {
     if (!passwords.current) {
       errors.current = "Enter your current password.";
     }
-    if (passwords.next.length < 8) {
-      errors.next = "New password must be at least 8 characters.";
+    if (passwords.next.length < 12) {
+      errors.next = "New password must be at least 12 characters.";
     } else if (passwords.next === passwords.current) {
       errors.next = "New password must be different from the current password.";
     }
@@ -340,7 +351,10 @@ export default function SettingsPage() {
 
     if (Object.keys(errors).length > 0) {
       setPasswordErrors(errors);
-      setPasswordStatus({ type: "error", message: "Please fix the highlighted fields." });
+      setPasswordStatus({
+        type: "error",
+        message: "Please fix the highlighted fields.",
+      });
       return;
     }
 
@@ -394,7 +408,10 @@ export default function SettingsPage() {
 
   const saveNotifications = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    window.localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(notifications));
+    window.localStorage.setItem(
+      NOTIFICATIONS_KEY,
+      JSON.stringify(notifications),
+    );
     setNotificationStatus({
       type: "success",
       message: "Notification preferences saved.",
@@ -430,7 +447,9 @@ export default function SettingsPage() {
             {accountId ? ` \u00b7 ${accountId}` : ""}
           </p>
         </div>
-        {role ? <span className={styles.rolePill}>{ROLE_LABELS[role]}</span> : null}
+        {role ? (
+          <span className={styles.rolePill}>{ROLE_LABELS[role]}</span>
+        ) : null}
       </header>
 
       <div className={styles.settingsLayout}>
@@ -473,7 +492,9 @@ export default function SettingsPage() {
                       autoComplete="given-name"
                     />
                     {profileErrors.firstName ? (
-                      <p className={styles.fieldError}>{profileErrors.firstName}</p>
+                      <p className={styles.fieldError}>
+                        {profileErrors.firstName}
+                      </p>
                     ) : null}
                   </label>
 
@@ -487,7 +508,9 @@ export default function SettingsPage() {
                       autoComplete="family-name"
                     />
                     {profileErrors.lastName ? (
-                      <p className={styles.fieldError}>{profileErrors.lastName}</p>
+                      <p className={styles.fieldError}>
+                        {profileErrors.lastName}
+                      </p>
                     ) : null}
                   </label>
 
@@ -518,7 +541,9 @@ export default function SettingsPage() {
                       autoComplete="tel"
                     />
                     {profileErrors.contact ? (
-                      <p className={styles.fieldError}>{profileErrors.contact}</p>
+                      <p className={styles.fieldError}>
+                        {profileErrors.contact}
+                      </p>
                     ) : null}
                   </label>
 
@@ -578,7 +603,9 @@ export default function SettingsPage() {
                       autoComplete="current-password"
                     />
                     {passwordErrors.current ? (
-                      <p className={styles.fieldError}>{passwordErrors.current}</p>
+                      <p className={styles.fieldError}>
+                        {passwordErrors.current}
+                      </p>
                     ) : null}
                   </label>
 
@@ -593,9 +620,11 @@ export default function SettingsPage() {
                         }
                         autoComplete="new-password"
                       />
-                    {passwordErrors.next ? (
-                      <p className={styles.fieldError}>{passwordErrors.next}</p>
-                    ) : null}
+                      {passwordErrors.next ? (
+                        <p className={styles.fieldError}>
+                          {passwordErrors.next}
+                        </p>
+                      ) : null}
                     </label>
 
                     <label className={styles.field}>
@@ -608,9 +637,11 @@ export default function SettingsPage() {
                         }
                         autoComplete="new-password"
                       />
-                    {passwordErrors.confirm ? (
-                      <p className={styles.fieldError}>{passwordErrors.confirm}</p>
-                    ) : null}
+                      {passwordErrors.confirm ? (
+                        <p className={styles.fieldError}>
+                          {passwordErrors.confirm}
+                        </p>
+                      ) : null}
                     </label>
                   </div>
 
@@ -704,6 +735,3 @@ export default function SettingsPage() {
     </main>
   );
 }
-
-
-
